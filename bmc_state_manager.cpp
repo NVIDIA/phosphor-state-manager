@@ -34,7 +34,8 @@ constexpr auto activeState = "active";
 
 /* Map a transition to it's systemd target */
 const std::map<server::BMC::Transition, const char*> SYSTEMD_TABLE = {
-    {server::BMC::Transition::Reboot, "reboot.target"}};
+    {server::BMC::Transition::Reboot, "reboot.target"},
+    {server::BMC::Transition::PowerOff, "poweroff.target"}};
 
 constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
 constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
