@@ -82,8 +82,10 @@ class BMC : public BMCInherit
     /** @brief Execute the transition request
      *
      *  @param[in] tranReq   - Transition requested
+     *
+     *  @return bool - status of bmc transition
      */
-    void executeTransition(Transition tranReq);
+    bool executeTransition(Transition tranReq);
 
     /** @brief Callback function on bmc state change
      *

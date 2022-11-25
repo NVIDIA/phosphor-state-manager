@@ -129,7 +129,7 @@ void BMC::subscribeToSystemdSignals()
     return;
 }
 
-void BMC::executeTransition(const Transition tranReq)
+bool BMC::executeTransition(const Transition tranReq)
 {
     // HardReboot does not shutdown any services and immediately transitions
     // into the reboot process
@@ -144,6 +144,7 @@ void BMC::executeTransition(const Transition tranReq)
         catch (const sdbusplus::exception::exception& e)
         {
             info("Error in HardReboot: {ERROR}", "ERROR", e);
+            return false;
         }
     }
     else
@@ -151,7 +152,7 @@ void BMC::executeTransition(const Transition tranReq)
         // Check to make sure it can be found
         auto iter = SYSTEMD_TABLE.find(tranReq);
         if (iter == SYSTEMD_TABLE.end())
-            return;
+            return false;
 
         const auto& sysdUnit = iter->second;
 
@@ -170,9 +171,10 @@ void BMC::executeTransition(const Transition tranReq)
         {
             info("Error in StartUnit - replace-irreversibly: {ERROR}", "ERROR",
                  e);
+            return false;
         }
     }
-    return;
+    return true;
 }
 
 int BMC::bmcStateChange(sdbusplus::message::message& msg)
@@ -216,8 +218,15 @@ BMC::Transition BMC::requestedBMCTransition(Transition value)
          "{REQUESTED_BMC_TRANSITION}",
          "REQUESTED_BMC_TRANSITION", value);
 
-    executeTransition(value);
-    return server::BMC::requestedBMCTransition(value);
+    if (executeTransition(value))
+    {
+        return server::BMC::requestedBMCTransition(value);
+    }
+    else
+    {
+        error("Failed to set RequestedBMCTransition");
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
+    }
 }
 
 BMC::BMCState BMC::currentBMCState(BMCState value)
