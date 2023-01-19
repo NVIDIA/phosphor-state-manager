@@ -131,6 +131,27 @@ void BMC::subscribeToSystemdSignals()
 
 bool BMC::executeTransition(const Transition tranReq)
 {
+
+    std::string messageId = "OpenBMC.0.4.BMCRebootReason";
+    std::string messageArgs{};
+    switch (tranReq)
+    {
+        case server::BMC::Transition::HardReboot:
+            messageArgs = "Force Restart";
+            break;
+        case server::BMC::Transition::Reboot:
+            messageArgs = "Graceful Restart";
+            break;
+        case server::BMC::Transition::PowerOff:
+            messageArgs = "Shutdown";
+            break;
+        default:
+            messageArgs = "Unknown";
+            break;
+    }
+
+    createRFLogEntry(messageId, messageArgs);
+
     // HardReboot does not shutdown any services and immediately transitions
     // into the reboot process
     if (server::BMC::Transition::HardReboot == tranReq)
@@ -296,6 +317,36 @@ void BMC::discoverLastRebootCause()
     }
 
     return;
+}
+
+void BMC::createRFLogEntry(const std::string& messageId,
+                           const std::string& messageArgs)
+{
+    auto method = this->bus.new_method_call(
+        "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
+        "xyz.openbmc_project.Logging.Create", "Create");
+    // Signature is ssa{ss}
+    method.append(messageId);
+    method.append("xyz.openbmc_project.Logging.Entry.Level.Informational");
+    method.append(std::array<std::pair<std::string, std::string>, 2>(
+        {std::pair<std::string, std::string>({"REDFISH_MESSAGE_ID", messageId}),
+         std::pair<std::string, std::string>(
+             {"REDFISH_MESSAGE_ARGS", messageArgs})}));
+    try
+    {
+        // A strict timeout for logging service to fail early and ensure 
+        // the original caller does not encounter dbus timeout
+        uint64_t timeout_us = 10000000;
+        
+        this->bus.call_noreply(method, timeout_us);
+        // Since we are going for reboot, Logging service needs time before we
+        // trigger reboot
+        usleep(2000000);
+    }
+    catch (const sdbusplus::exception::exception& e)
+    {
+        error("Failed to create log entry, exception:{ERROR}", "ERROR", e);
+    }
 }
 
 } // namespace manager

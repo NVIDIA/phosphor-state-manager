@@ -107,6 +107,15 @@ class BMC : public BMCInherit
      * @brief discover the last reboot cause of the bmc
      **/
     void discoverLastRebootCause();
+
+    /** @brief Creates a log Entry 
+     *
+     *  @param[in] messageId   - REDFISH_MESSAGE_ID 
+     *  @param[in] messageArgs   - REDFISH_MESSAGE_ARGS
+     *
+     */
+    void createRFLogEntry(const std::string& messageId,
+                            const std::string& messageArgs);
 };
 
 } // namespace manager
