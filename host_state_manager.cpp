@@ -3,7 +3,9 @@
 #include "host_state_manager.hpp"
 
 #include "host_check.hpp"
+#include "utils.hpp"
 
+#include <fmt/format.h>
 #include <stdio.h>
 #include <systemd/sd-bus.h>
 
@@ -44,42 +46,11 @@ namespace bootprogress = sdbusplus::xyz::openbmc_project::State::Boot::server;
 namespace osstatus =
     sdbusplus::xyz::openbmc_project::State::OperatingSystem::server;
 using namespace phosphor::logging;
-namespace fs = std::experimental::filesystem;
+namespace fs = std::filesystem;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
-
-// host-shutdown notifies host of shutdown and that leads to host-stop being
-// called so initiate a host shutdown with the -shutdown target and consider the
-// host shut down when the -stop target is complete
-constexpr auto HOST_STATE_SOFT_POWEROFF_TGT = "obmc-host-shutdown@0.target";
-constexpr auto HOST_STATE_POWEROFF_TGT = "obmc-host-stop@0.target";
-constexpr auto HOST_STATE_POWERON_TGT = "obmc-host-start@0.target";
-constexpr auto HOST_STATE_POWERON_MIN_TGT = "obmc-host-startmin@0.target";
-constexpr auto HOST_STATE_REBOOT_TGT = "obmc-host-reboot@0.target";
-constexpr auto HOST_STATE_WARM_REBOOT = "obmc-host-warm-reboot@0.target";
-constexpr auto HOST_STATE_FORCE_WARM_REBOOT =
-    "obmc-host-force-warm-reboot@0.target";
-constexpr auto HOST_STATE_DIAGNOSTIC_MODE =
-    "obmc-host-diagnostic-mode@0.target";
-
-constexpr auto HOST_STATE_QUIESCE_TGT = "obmc-host-quiesce@0.target";
 
 constexpr auto ACTIVE_STATE = "active";
 constexpr auto ACTIVATING_STATE = "activating";
-
-/* Map a transition to it's systemd target */
-const std::map<server::Host::Transition, std::string> SYSTEMD_TARGET_TABLE = {
-    {server::Host::Transition::Off, HOST_STATE_SOFT_POWEROFF_TGT},
-    {server::Host::Transition::On, HOST_STATE_POWERON_TGT},
-    {server::Host::Transition::Reboot, HOST_STATE_REBOOT_TGT},
-// Some systems do not support a warm reboot so just map the reboot
-// requests to our normal cold reboot in that case
-#if ENABLE_WARM_REBOOT
-    {server::Host::Transition::GracefulWarmReboot, HOST_STATE_WARM_REBOOT},
-    {server::Host::Transition::ForceWarmReboot, HOST_STATE_FORCE_WARM_REBOOT}};
-#else
-    {server::Host::Transition::GracefulWarmReboot, HOST_STATE_REBOOT_TGT},
-    {server::Host::Transition::ForceWarmReboot, HOST_STATE_REBOOT_TGT}};
-#endif
 
 constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
 constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
@@ -96,7 +67,7 @@ void Host::subscribeToSystemdSignals()
     {
         this->bus.call_noreply(method);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Failed to subscribe to systemd signals: {ERROR}", "ERROR", e);
         elog<InternalFailure>();
@@ -106,8 +77,8 @@ void Host::subscribeToSystemdSignals()
 
 void Host::determineInitialState()
 {
-
-    if (stateActive(HOST_STATE_POWERON_MIN_TGT) || isHostRunning())
+    if (stateActive(getTarget(server::Host::HostState::Running)) ||
+        isHostRunning(id))
     {
         info("Initial Host State will be Running");
         server::Host::currentHostState(HostState::Running);
@@ -120,18 +91,58 @@ void Host::determineInitialState()
         server::Host::requestedHostTransition(Transition::Off);
     }
 
-    if (!deserialize(HOST_STATE_PERSIST_PATH))
+    if (!deserialize())
     {
         // set to default value.
         server::Host::requestedHostTransition(Transition::Off);
     }
-
     return;
 }
 
+void Host::createSystemdTargetMaps()
+{
+    stateTargetTable = {
+        {HostState::Off, fmt::format("obmc-host-stop@{}.target", id)},
+        {HostState::Running, fmt::format("obmc-host-startmin@{}.target", id)},
+        {HostState::Quiesced, fmt::format("obmc-host-quiesce@{}.target", id)},
+        {HostState::DiagnosticMode,
+         fmt::format("obmc-host-diagnostic-mode@{}.target", id)}};
+
+    transitionTargetTable = {
+        {Transition::Off, fmt::format("obmc-host-shutdown@{}.target", id)},
+        {Transition::On, fmt::format("obmc-host-start@{}.target", id)},
+        {Transition::Reboot, fmt::format("obmc-host-reboot@{}.target", id)},
+// Some systems do not support a warm reboot so just map the reboot
+// requests to our normal cold reboot in that case
+#if ENABLE_WARM_REBOOT
+        {Transition::GracefulWarmReboot,
+         fmt::format("obmc-host-warm-reboot@{}.target", id)},
+        {Transition::ForceWarmReboot,
+         fmt::format("obmc-host-force-warm-reboot@{}.target", id)}
+    };
+#else
+        {Transition::GracefulWarmReboot,
+         fmt::format("obmc-host-reboot@{}.target", id)},
+        {Transition::ForceWarmReboot,
+         fmt::format("obmc-host-reboot@{}.target", id)}
+    };
+#endif
+    hostCrashTarget = fmt::format("obmc-host-crash@{}.target", id);
+}
+
+const std::string& Host::getTarget(HostState state)
+{
+    return stateTargetTable[state];
+};
+
+const std::string& Host::getTarget(Transition tranReq)
+{
+    return transitionTargetTable[tranReq];
+};
+
 void Host::executeTransition(Transition tranReq)
 {
-    auto sysdUnit = SYSTEMD_TARGET_TABLE.find(tranReq)->second;
+    auto& sysdUnit = getTarget(tranReq);
 
     auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
                                             SYSTEMD_INTERFACE, "StartUnit");
@@ -159,7 +170,7 @@ bool Host::stateActive(const std::string& target)
         auto result = this->bus.call(method);
         result.read(unitTargetPath);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Error in GetUnit call: {ERROR}", "ERROR", e);
         return false;
@@ -177,7 +188,7 @@ bool Host::stateActive(const std::string& target)
         auto result = this->bus.call(method);
         result.read(currentState);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Error in ActiveState Get: {ERROR}", "ERROR", e);
         return false;
@@ -243,7 +254,18 @@ bool Host::isAutoReboot()
             {
                 // We are at 0 so reset reboot counter and go to quiesce state
                 info("Auto reboot enabled but HOST BOOTCOUNT already set to 0");
-                attemptsLeft(BOOT_COUNT_MAX_ALLOWED);
+                attemptsLeft(reboot::RebootAttempts::retryAttempts());
+
+                // Generate log since we will now be sitting in Quiesce
+                const std::string errorMsg =
+                    "xyz.openbmc_project.State.Error.HostQuiesce";
+                utils::createError(this->bus, errorMsg,
+                                   sdbusplus::xyz::openbmc_project::Logging::
+                                       server::Entry::Level::Critical);
+
+                // Generate BMC dump to assist with debug
+                utils::createBmcDump(this->bus);
+
                 return false;
             }
         }
@@ -253,14 +275,14 @@ bool Host::isAutoReboot()
             return false;
         }
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Error in AutoReboot Get, {ERROR}", "ERROR", e);
         return false;
     }
 }
 
-void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
+void Host::sysStateChangeJobRemoved(sdbusplus::message_t& msg)
 {
     uint32_t newStateID{};
     sdbusplus::message::object_path newStateObjPath;
@@ -270,18 +292,18 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
     // Read the msg and populate each variable
     msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
 
-    if ((newStateUnit == HOST_STATE_POWEROFF_TGT) &&
+    if ((newStateUnit == getTarget(server::Host::HostState::Off)) &&
         (newStateResult == "done") &&
-        (!stateActive(HOST_STATE_POWERON_MIN_TGT)))
+        (!stateActive(getTarget(server::Host::HostState::Running))))
     {
         info("Received signal that host is off");
         this->currentHostState(server::Host::HostState::Off);
         this->bootProgress(bootprogress::Progress::ProgressStages::Unspecified);
         this->operatingSystemState(osstatus::Status::OSStatus::Inactive);
     }
-    else if ((newStateUnit == HOST_STATE_POWERON_MIN_TGT) &&
+    else if ((newStateUnit == getTarget(server::Host::HostState::Running)) &&
              (newStateResult == "done") &&
-             (stateActive(HOST_STATE_POWERON_MIN_TGT)))
+             (stateActive(getTarget(server::Host::HostState::Running))))
     {
         info("Received signal that host is running");
         this->currentHostState(server::Host::HostState::Running);
@@ -300,9 +322,9 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
             std::filesystem::remove(hostFile.get());
         }
     }
-    else if ((newStateUnit == HOST_STATE_QUIESCE_TGT) &&
+    else if ((newStateUnit == getTarget(server::Host::HostState::Quiesced)) &&
              (newStateResult == "done") &&
-             (stateActive(HOST_STATE_QUIESCE_TGT)))
+             (stateActive(getTarget(server::Host::HostState::Quiesced))))
     {
         if (Host::isAutoReboot())
         {
@@ -317,7 +339,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
     }
 }
 
-void Host::sysStateChangeJobNew(sdbusplus::message::message& msg)
+void Host::sysStateChangeJobNew(sdbusplus::message_t& msg)
 {
     uint32_t newStateID{};
     sdbusplus::message::object_path newStateObjPath;
@@ -326,10 +348,24 @@ void Host::sysStateChangeJobNew(sdbusplus::message::message& msg)
     // Read the msg and populate each variable
     msg.read(newStateID, newStateObjPath, newStateUnit);
 
-    if (newStateUnit == HOST_STATE_DIAGNOSTIC_MODE)
+    if (newStateUnit == getTarget(server::Host::HostState::DiagnosticMode))
     {
         info("Received signal that host is in diagnostice mode");
         this->currentHostState(server::Host::HostState::DiagnosticMode);
+    }
+    else if ((newStateUnit == hostCrashTarget) &&
+             (server::Host::currentHostState() ==
+              server::Host::HostState::Running))
+    {
+        // Only decrease the boot count if host was running when the host crash
+        // target was started. Systemd will sometimes trigger multiple
+        // JobNew events for the same target. This seems to be related to
+        // how OpenBMC utilizes the targets in the reboot scenario
+        info("Received signal that host has crashed, decrement reboot count");
+
+        // A host crash can cause a reboot of the host so decrement the reboot
+        // count
+        decrementRebootCount();
     }
 }
 
@@ -343,16 +379,18 @@ uint32_t Host::decrementRebootCount()
     return rebootCount;
 }
 
-fs::path Host::serialize(const fs::path& dir)
+fs::path Host::serialize()
 {
-    std::ofstream os(dir.c_str(), std::ios::binary);
+    fs::path path{fmt::format(HOST_STATE_PERSIST_PATH, id)};
+    std::ofstream os(path.c_str(), std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
     oarchive(*this);
-    return dir;
+    return path;
 }
 
-bool Host::deserialize(const fs::path& path)
+bool Host::deserialize()
 {
+    fs::path path{fmt::format(HOST_STATE_PERSIST_PATH, id)};
     try
     {
         if (fs::exists(path))
@@ -388,6 +426,7 @@ Host::Transition Host::requestedHostTransition(Transition value)
     executeTransition(value);
 
     auto retVal = server::Host::requestedHostTransition(value);
+
     serialize();
     return retVal;
 }

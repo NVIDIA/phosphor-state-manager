@@ -1,5 +1,6 @@
 #pragma once
 
+#include "systemd_service_parser.hpp"
 #include "systemd_target_parser.hpp"
 
 #include <sdbusplus/bus.hpp>
@@ -28,9 +29,10 @@ class SystemdTargetLogging
     virtual ~SystemdTargetLogging() = default;
 
     SystemdTargetLogging(const TargetErrorData& targetData,
-                         sdbusplus::bus::bus& bus) :
+                         const ServiceMonitorData& serviceData,
+                         sdbusplus::bus_t& bus) :
         targetData(targetData),
-        bus(bus),
+        serviceData(serviceData), bus(bus),
         systemdJobRemovedSignal(
             bus,
             sdbusplus::bus::match::rules::type::signal() +
@@ -66,16 +68,21 @@ class SystemdTargetLogging
      *
      * @return valid pointer to error to log, otherwise nullptr
      */
-    const std::string* processError(const std::string& unit,
-                                    const std::string& result);
+    const std::string processError(const std::string& unit,
+                                   const std::string& result);
 
   private:
+    /** @brief Start BMC Quiesce Target to indicate critical service failure */
+    void startBmcQuiesceTarget();
+
     /** @brief Call phosphor-logging to create error
      *
      * @param[in]  error      - The error to log
      * @param[in]  result     - The failure code from the systemd unit
+     * @param[in]  unit       - The name of the failed unit
      */
-    void logError(const std::string& error, const std::string& result);
+    void logError(const std::string& error, const std::string& result,
+                  const std::string& unit);
 
     /** @brief Check if systemd state change is one to monitor
      *
@@ -85,7 +92,7 @@ class SystemdTargetLogging
      * @param[in]  msg       - Data associated with subscribed signal
      *
      */
-    void systemdUnitChange(sdbusplus::message::message& msg);
+    void systemdUnitChange(sdbusplus::message_t& msg);
 
     /** @brief Wait for systemd to show up on dbus
      *
@@ -95,13 +102,16 @@ class SystemdTargetLogging
      * @param[in]  msg       - Data associated with subscribed signal
      *
      */
-    void processNameChangeSignal(sdbusplus::message::message& msg);
+    void processNameChangeSignal(sdbusplus::message_t& msg);
 
     /** @brief Systemd targets to monitor and error logs to create */
     const TargetErrorData& targetData;
 
+    /** @brief Systemd targets to monitor and error logs to create */
+    const ServiceMonitorData& serviceData;
+
     /** @brief Persistent sdbusplus DBus bus connection. */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus systemd JobRemoved signals **/
     sdbusplus::bus::match_t systemdJobRemovedSignal;

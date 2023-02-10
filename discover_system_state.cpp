@@ -2,9 +2,12 @@
 
 #include "host_state_manager.hpp"
 #include "settings.hpp"
+#include "utils.hpp"
 #include "xyz/openbmc_project/Common/error.hpp"
 #include "xyz/openbmc_project/Control/Power/RestorePolicy/server.hpp"
 
+#include <fmt/format.h>
+#include <fmt/printf.h>
 #include <getopt.h>
 #include <systemd/sd-bus.h>
 
@@ -13,9 +16,11 @@
 #include <sdbusplus/exception.hpp>
 #include <sdbusplus/server.hpp>
 
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <string>
+#include <thread>
 
 namespace phosphor
 {
@@ -30,94 +35,6 @@ using namespace phosphor::logging;
 using namespace sdbusplus::xyz::openbmc_project::Common::Error;
 using namespace sdbusplus::xyz::openbmc_project::Control::Power::server;
 
-constexpr auto MAPPER_BUSNAME = "xyz.openbmc_project.ObjectMapper";
-constexpr auto MAPPER_PATH = "/xyz/openbmc_project/object_mapper";
-constexpr auto MAPPER_INTERFACE = "xyz.openbmc_project.ObjectMapper";
-
-constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
-
-std::string getService(sdbusplus::bus::bus& bus, std::string path,
-                       std::string interface)
-{
-    auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
-                                      MAPPER_INTERFACE, "GetObject");
-
-    mapper.append(path, std::vector<std::string>({interface}));
-
-    std::map<std::string, std::vector<std::string>> mapperResponse;
-    try
-    {
-        auto mapperResponseMsg = bus.call(mapper);
-
-        mapperResponseMsg.read(mapperResponse);
-        if (mapperResponse.empty())
-        {
-            error("Mapper response empty, does not have path {PATH} and "
-                  "interface {INTERFACE}",
-                  "PATH", path, "INTERFACE", interface);
-            throw std::runtime_error("Error reading mapper response");
-        }
-    }
-    catch (const sdbusplus::exception::exception& e)
-    {
-        error("Error in mapper call for path {PATH} and interface {INTERFACE} "
-              "with error {ERROR}",
-              "PATH", path, "INTERFACE", interface, "ERROR", e);
-        throw;
-    }
-
-    return mapperResponse.begin()->first;
-}
-
-std::string getProperty(sdbusplus::bus::bus& bus, std::string path,
-                        std::string interface, std::string propertyName)
-{
-    std::variant<std::string> property;
-    std::string service = getService(bus, path, interface);
-
-    auto method = bus.new_method_call(service.c_str(), path.c_str(),
-                                      PROPERTY_INTERFACE, "Get");
-
-    method.append(interface, propertyName);
-
-    try
-    {
-        auto reply = bus.call(method);
-        reply.read(property);
-    }
-    catch (const sdbusplus::exception::exception& e)
-    {
-        error("Error in property Get, error {ERROR}, property {PROPERTY}",
-              "ERROR", e, "PROPERTY", propertyName);
-        throw;
-    }
-
-    if (std::get<std::string>(property).empty())
-    {
-        error("Error reading property response for {PROPERTY}", "PROPERTY",
-              propertyName);
-        throw std::runtime_error("Error reading property response");
-    }
-
-    return std::get<std::string>(property);
-}
-
-void setProperty(sdbusplus::bus::bus& bus, const std::string& path,
-                 const std::string& interface, const std::string& property,
-                 const std::string& value)
-{
-    std::variant<std::string> variantValue = value;
-    std::string service = getService(bus, path, interface);
-
-    auto method = bus.new_method_call(service.c_str(), path.c_str(),
-                                      PROPERTY_INTERFACE, "Set");
-
-    method.append(interface, property, variantValue);
-    bus.call_noreply(method);
-
-    return;
-}
-
 } // namespace manager
 } // namespace state
 } // namespace phosphor
@@ -126,6 +43,7 @@ int main(int argc, char** argv)
 {
     using namespace phosphor::logging;
 
+    size_t hostId = 0;
     std::string hostPath = "/xyz/openbmc_project/state/host0";
     int arg;
     int optIndex = 0;
@@ -138,6 +56,7 @@ int main(int argc, char** argv)
         switch (arg)
         {
             case 'h':
+                hostId = std::stoul(optarg);
                 hostPath =
                     std::string("/xyz/openbmc_project/state/host") + optarg;
                 break;
@@ -149,12 +68,31 @@ int main(int argc, char** argv)
     auto bus = sdbusplus::bus::new_default();
 
     using namespace settings;
-    Objects settings(bus);
+    HostObjects settings(bus, hostId);
 
     using namespace phosphor::state::manager;
     namespace server = sdbusplus::xyz::openbmc_project::State::server;
 
     // This application is only run if chassis power is off
+
+    // If the BMC was rebooted due to a user initiated pinhole reset, do not
+    // implement any power restore policies
+    auto bmcRebootCause = phosphor::state::manager::utils::getProperty(
+        bus, "/xyz/openbmc_project/state/bmc0", BMC_BUSNAME, "LastRebootCause");
+    if (bmcRebootCause ==
+        "xyz.openbmc_project.State.BMC.RebootCause.PinholeReset")
+    {
+        info(
+            "BMC was reset due to pinhole reset, no power restore policy will be run");
+        return 0;
+    }
+    else if (bmcRebootCause ==
+             "xyz.openbmc_project.State.BMC.RebootCause.Watchdog")
+    {
+        info(
+            "BMC was reset due to cold reset, no power restore policy will be run");
+        return 0;
+    }
 
     /* The logic here is to first check the one-time PowerRestorePolicy setting.
      * If this property is not the default then look at the persistent
@@ -185,6 +123,15 @@ int main(int argc, char** argv)
         {
             // one_time is set to None so use the customer setting
             info("One time not set, check user setting of power policy");
+
+#ifdef ONLY_RUN_APR_ON_POWER_LOSS
+            if (!phosphor::state::manager::utils::checkACLoss(hostId))
+            {
+                info(
+                    "Chassis power was not on prior to BMC reboot so do not run any power policy");
+                return 0;
+            }
+#endif
             auto reply = bus.call(methodUserSetting);
             reply.read(result);
             powerPolicy = std::get<std::string>(result);
@@ -194,10 +141,29 @@ int main(int argc, char** argv)
             // one_time setting was set so we're going to use it. Reset it
             // to default for next time.
             info("One time set, use it and reset to default");
-            setProperty(bus, settings.powerRestorePolicyOneTime.c_str(),
-                        powerRestoreIntf, "PowerRestorePolicy",
-                        convertForMessage(RestorePolicy::Policy::None));
+            phosphor::state::manager::utils::setProperty(
+                bus, settings.powerRestorePolicyOneTime.c_str(),
+                powerRestoreIntf, "PowerRestorePolicy",
+                convertForMessage(RestorePolicy::Policy::None));
         }
+
+        auto methodUserSettingDelay = bus.new_method_call(
+            settings.service(settings.powerRestorePolicy, powerRestoreIntf)
+                .c_str(),
+            settings.powerRestorePolicy.c_str(),
+            "org.freedesktop.DBus.Properties", "Get");
+
+        methodUserSettingDelay.append(powerRestoreIntf, "PowerRestoreDelay");
+
+        std::variant<uint64_t> restoreDelay;
+
+        auto delayResult = bus.call(methodUserSettingDelay);
+        delayResult.read(restoreDelay);
+        auto powerRestoreDelayUsec =
+            std::chrono::microseconds(std::get<uint64_t>(restoreDelay));
+        auto powerRestoreDelaySec =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                powerRestoreDelayUsec);
 
         info("Host power is off, processing power policy {POWER_POLICY}",
              "POWER_POLICY", powerPolicy);
@@ -205,29 +171,61 @@ int main(int argc, char** argv)
         if (RestorePolicy::Policy::AlwaysOn ==
             RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            info("power_policy=ALWAYS_POWER_ON, powering host on");
-            setProperty(bus, hostPath, HOST_BUSNAME, "RestartCause",
-                        convertForMessage(
-                            server::Host::RestartCause::PowerPolicyAlwaysOn));
-            setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
-                        convertForMessage(server::Host::Transition::On));
+            info(
+                "power_policy=ALWAYS_POWER_ON, powering host on ({DELAY}s delay)",
+                "DELAY", powerRestoreDelaySec.count());
+            std::this_thread::sleep_for(powerRestoreDelayUsec);
+            phosphor::state::manager::utils::setProperty(
+                bus, hostPath, HOST_BUSNAME, "RestartCause",
+                convertForMessage(
+                    server::Host::RestartCause::PowerPolicyAlwaysOn));
+            phosphor::state::manager::utils::setProperty(
+                bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                convertForMessage(server::Host::Transition::On));
+        }
+        else if (RestorePolicy::Policy::AlwaysOff ==
+                 RestorePolicy::convertPolicyFromString(powerPolicy))
+        {
+            info(
+                "power_policy=ALWAYS_POWER_OFF, set requested state to off ({DELAY}s delay)",
+                "DELAY", powerRestoreDelaySec.count());
+            std::this_thread::sleep_for(powerRestoreDelayUsec);
+            // Read last requested state and re-request it to execute it
+            auto hostReqState = phosphor::state::manager::utils::getProperty(
+                bus, hostPath, HOST_BUSNAME, "RequestedHostTransition");
+            if (hostReqState !=
+                convertForMessage(server::Host::Transition::Off))
+            {
+                phosphor::state::manager::utils::setProperty(
+                    bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                    convertForMessage(server::Host::Transition::Off));
+            }
         }
         else if (RestorePolicy::Policy::Restore ==
                  RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            info("power_policy=RESTORE, restoring last state");
-            setProperty(
-                bus, hostPath, HOST_BUSNAME, "RestartCause",
-                convertForMessage(
-                    server::Host::RestartCause::PowerPolicyPreviousState));
+            info("power_policy=RESTORE, restoring last state ({DELAY}s delay)",
+                 "DELAY", powerRestoreDelaySec.count());
+            std::this_thread::sleep_for(powerRestoreDelayUsec);
             // Read last requested state and re-request it to execute it
-            auto hostReqState = getProperty(bus, hostPath, HOST_BUSNAME,
-                                            "RequestedHostTransition");
-            setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
-                        hostReqState);
+            auto hostReqState = phosphor::state::manager::utils::getProperty(
+                bus, hostPath, HOST_BUSNAME, "RequestedHostTransition");
+
+            // As long as the host transition is not 'Off' power on host state.
+            if (hostReqState !=
+                convertForMessage(server::Host::Transition::Off))
+            {
+                phosphor::state::manager::utils::setProperty(
+                    bus, hostPath, HOST_BUSNAME, "RestartCause",
+                    convertForMessage(
+                        server::Host::RestartCause::PowerPolicyPreviousState));
+                phosphor::state::manager::utils::setProperty(
+                    bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                    convertForMessage(server::Host::Transition::On));
+            }
         }
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Error in PowerRestorePolicy Get: {ERROR}", "ERROR", e);
         elog<InternalFailure>();

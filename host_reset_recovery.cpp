@@ -8,6 +8,7 @@
 #include <sdbusplus/exception.hpp>
 #include <xyz/openbmc_project/Logging/Create/server.hpp>
 #include <xyz/openbmc_project/Logging/Entry/server.hpp>
+#include <xyz/openbmc_project/State/Boot/Progress/server.hpp>
 
 #include <cstdlib>
 #include <fstream>
@@ -37,31 +38,33 @@ constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
 constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 constexpr auto HOST_STATE_QUIESCE_TGT = "obmc-host-quiesce@0.target";
 
-bool wasHostBooting(sdbusplus::bus::bus& bus)
+bool wasHostBooting(sdbusplus::bus_t& bus)
 {
     try
     {
+        using ProgressStages = sdbusplus::xyz::openbmc_project::State::Boot::
+            server::Progress::ProgressStages;
+
         auto method = bus.new_method_call(HOST_STATE_SVC, HOST_STATE_PATH,
                                           PROPERTY_INTERFACE, "Get");
         method.append(BOOT_STATE_INTF, BOOT_PROGRESS_PROP);
 
         auto response = bus.call(method);
 
-        std::variant<std::string> bootProgress;
-        response.read(bootProgress);
+        std::variant<ProgressStages> bootProgressV;
+        response.read(bootProgressV);
+        auto bootProgress = std::get<ProgressStages>(bootProgressV);
 
-        if (std::get<std::string>(bootProgress) ==
-            "xyz.openbmc_project.State.Boot.Progress.ProgressStages."
-            "Unspecified")
+        if (bootProgress == ProgressStages::Unspecified)
         {
             info("Host was not booting before BMC reboot");
             return false;
         }
 
         info("Host was booting before BMC reboot: {BOOTPROGRESS}",
-             "BOOTPROGRESS", std::get<std::string>(bootProgress));
+             "BOOTPROGRESS", bootProgress);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Error reading BootProgress, error {ERROR}, service {SERVICE}, "
               "path {PATH}",
@@ -73,7 +76,7 @@ bool wasHostBooting(sdbusplus::bus::bus& bus)
     return true;
 }
 
-void createErrorLog(sdbusplus::bus::bus& bus)
+void createErrorLog(sdbusplus::bus_t& bus)
 {
     try
     {
@@ -92,7 +95,7 @@ void createErrorLog(sdbusplus::bus::bus& bus)
         method.append(errorMessage, level, additionalData);
         auto resp = bus.call(method);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error(
             "sdbusplus D-Bus call exception, error {ERROR}, objpath {OBJPATH}, "
@@ -123,7 +126,7 @@ bool isChassisTargetComplete()
     return !f.good();
 }
 
-void moveToHostQuiesce(sdbusplus::bus::bus& bus)
+void moveToHostQuiesce(sdbusplus::bus_t& bus)
 {
     try
     {
@@ -135,7 +138,7 @@ void moveToHostQuiesce(sdbusplus::bus::bus& bus)
 
         bus.call_noreply(method);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("sdbusplus call exception starting quiesce target: {ERROR}",
               "ERROR", e);

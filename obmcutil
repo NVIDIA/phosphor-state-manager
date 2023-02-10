@@ -4,9 +4,9 @@ set -euo pipefail
 
 OPTS="bmcstate,bootprogress,chassiskill,chassisoff,chassison,chassisstate,hoststate,\
 osstate,power,poweroff,poweron,state,status,hostrebootoff,hostrebooton,recoveryoff,recoveryon,\
-bmcrebootoff, bmcrebooton, listbootblock listlogs showlog deletelogs"
+bmcrebootoff, bmcrebooton, listbootblock listlogs showlog deletelogs, stopofftargets"
 
-USAGE="Usage: obmcutil [-h] [--wait] [--verbose]
+USAGE="Usage: obmcutil [-h] [--wait] [--verbose] [--id=<INSTANCE_ID>]
                 {$OPTS}"
 
 INTERFACE_ROOT=xyz.openbmc_project
@@ -38,6 +38,8 @@ G_QUERY=
 G_WAIT=
 # Print the journal to the console
 G_VERBOSE=
+# Instance id, default 0
+G_INSTANCE_ID="0"
 
 print_help ()
 {
@@ -51,33 +53,36 @@ print_help ()
     echo "obmcutil hostrebootoff Disable auto reboot of Host from Quiesce state"
     echo "obmcutil hostrebootoffonetime Disable auto reboot of Host from"
     echo "                              Quiesce state for a single boot"
-    echo "obmcutil hostrebooton  Enable auto reboot of Host from Quiesce state"
+    echo "obmcutil hostrebooton   Enable auto reboot of Host from Quiesce state"
     echo ""
-    echo "obmcutil bmcrebootoff  Disable reboot of BMC"
-    echo "obmcutil bmcrebooton   Enable reboot of BMC"
+    echo "obmcutil bmcrebootoff   Disable reboot of BMC"
+    echo "obmcutil bmcrebooton    Enable reboot of BMC"
     echo ""
-    echo "obmcutil recoveryoff   Disable handling boot watchdog timeout and host crash"
-    echo "                       Also, disable BMC and Host auto reboots"
+    echo "obmcutil recoveryoff    Disable handling boot watchdog timeout and host crash"
+    echo "                        Also, disable BMC and Host auto reboots"
     echo ""
-    echo "obmcutil recoveryon    Enable handling boot watchdog timeout and host crash"
-    echo "                       Also, enable BMC and Host auto reboots"
+    echo "obmcutil recoveryon     Enable handling boot watchdog timeout and host crash"
+    echo "                        Also, enable BMC and Host auto reboots"
     echo ""
-    echo "obmcutil listbootblock Check for and list any errors blocking the boot"
-    echo "                       of the system"
+    echo "obmcutil listbootblock  Check for and list any errors blocking the boot"
+    echo "                        of the system"
     echo ""
-    echo "obmcutil listlogs      List all phosphor-logging entries on the"
-    echo "                       system"
+    echo "obmcutil listlogs       List all phosphor-logging entries on the"
+    echo "                        system"
     echo ""
-    echo "obmcutil showlog <log> Display details of input log. Format of <log>"
-    echo "                       should match listlogs output"
+    echo "obmcutil showlog <log>  Display details of input log. Format of <log>"
+    echo "                        should match listlogs output"
     echo ""
-    echo "obmcutil deletelogs    Delete all phosphor-logging entries from"
-    echo "                       system"
+    echo "obmcutil deletelogs     Delete all phosphor-logging entries from"
+    echo "                        system"
+    echo "obmcutil stopofftargets Manually stop all obmc targets in power off"
+    echo "                        path"
     echo ""
     echo "optional arguments (must precede the positional options above):"
     echo "  -h, --help          show this help message and exit"
     echo "  -w, --wait          block until state transition succeeds or fails"
     echo "  -v, --verbose       print the journal to stdout if --wait is supplied"
+    echo "  -i, -id             instance id, default 0"
     exit 0
 }
 
@@ -279,11 +284,24 @@ delete_logs()
            xyz.openbmc_project.Collection.DeleteAll DeleteAll
 }
 
+# stop all targets associated with powering off a system
+stop_off_targets()
+{
+    systemctl stop \
+        obmc-chassis-powered-off@0.target \
+        obmc-host-stop-pre@0.target \
+        obmc-host-stopped@0.target \
+        obmc-host-stopping@0.target \
+        obmc-power-off@0.target \
+        obmc-power-stop-pre@0.target \
+        obmc-power-stop@0.target
+}
+
 handle_cmd ()
 {
     case "$1" in
         chassisoff)
-            OBJECT=$STATE_OBJECT/chassis0
+            OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Chassis
             PROPERTY=RequestedPowerTransition
@@ -294,7 +312,7 @@ handle_cmd ()
             ;;
         chassison)
             check_and_warn_boot_block
-            OBJECT=$STATE_OBJECT/chassis0
+            OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Chassis
             PROPERTY=RequestedPowerTransition
@@ -304,7 +322,7 @@ handle_cmd ()
             set_property "$SERVICE" $OBJECT $INTERFACE $PROPERTY "s" $VALUE
             ;;
         poweroff)
-            OBJECT=$STATE_OBJECT/host0
+            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Host
             PROPERTY=RequestedHostTransition
@@ -315,7 +333,7 @@ handle_cmd ()
             ;;
         poweron)
             check_and_warn_boot_block
-            OBJECT=$STATE_OBJECT/host0
+            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Host
             PROPERTY=RequestedHostTransition
@@ -332,21 +350,21 @@ handle_cmd ()
             state_query "$SERVICE" $OBJECT $INTERFACE $PROPERTY
             ;;
         chassisstate)
-            OBJECT=$STATE_OBJECT/chassis0
+            OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Chassis
             PROPERTY=CurrentPowerState
             state_query "$SERVICE" $OBJECT $INTERFACE $PROPERTY
             ;;
         hoststate)
-            OBJECT=$STATE_OBJECT/host0
+            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Host
             PROPERTY=CurrentHostState
             state_query "$SERVICE" $OBJECT $INTERFACE $PROPERTY
             ;;
         osstate)
-            OBJECT=$STATE_OBJECT/host0
+            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.OperatingSystem.Status
             PROPERTY=OperatingSystemState
@@ -360,7 +378,7 @@ handle_cmd ()
             check_and_warn_boot_block
             ;;
         bootprogress)
-            OBJECT=$STATE_OBJECT/host0
+            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$STATE_INTERFACE.Boot.Progress
             PROPERTY=BootProgress
@@ -385,7 +403,7 @@ handle_cmd ()
             /usr/libexec/chassiskill
             ;;
         hostrebootoff)
-            OBJECT=$CONTROL_OBJECT/host0/auto_reboot
+            OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
             PROPERTY=AutoReboot
@@ -393,7 +411,7 @@ handle_cmd ()
             set_property "$SERVICE" $OBJECT $INTERFACE $PROPERTY "b" $VALUE
             ;;
         hostrebootoffonetime)
-            OBJECT=$CONTROL_OBJECT/host0/auto_reboot/one_time
+            OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot/one_time
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
             PROPERTY=AutoReboot
@@ -401,7 +419,7 @@ handle_cmd ()
             set_property "$SERVICE" $OBJECT $INTERFACE $PROPERTY "b" $VALUE
         ;;
         hostrebooton)
-            OBJECT=$CONTROL_OBJECT/host0/auto_reboot
+            OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot
             SERVICE=$(mapper get-service $OBJECT)
             INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
             PROPERTY=AutoReboot
@@ -443,6 +461,9 @@ handle_cmd ()
         deletelogs)
             delete_logs
             ;;
+        stopofftargets)
+            stop_off_targets
+            ;;
         *)
             print_usage_err "Invalid command '$1'"
             ;;
@@ -462,6 +483,10 @@ for arg in "$@"; do
             ;;
         -v|--verbose)
             G_VERBOSE=y
+            shiftcnt=$((shiftcnt+1))
+            ;;
+        -i=*|--id=*)
+            G_INSTANCE_ID="${arg#*=}"
             shiftcnt=$((shiftcnt+1))
             ;;
         -*)

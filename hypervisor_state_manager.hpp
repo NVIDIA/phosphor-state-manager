@@ -14,7 +14,7 @@ namespace state
 namespace manager
 {
 
-using HypervisorInherit = sdbusplus::server::object::object<
+using HypervisorInherit = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::State::server::Host>;
 
 namespace server = sdbusplus::xyz::openbmc_project::State::server;
@@ -40,10 +40,20 @@ class Hypervisor : public HypervisorInherit
      * @param[in] bus       - The Dbus bus object
      * @param[in] objPath   - The Dbus object path
      */
+<<<<<<< HEAD
     Hypervisor(sdbusplus::bus::bus& bus, const char* objPath) :
         HypervisorInherit(bus, objPath,
                           HypervisorInherit::action::emit_object_added),
         bus(bus),
+||||||| ba2241c
+    Hypervisor(sdbusplus::bus::bus& bus, const char* objPath) :
+        HypervisorInherit(bus, objPath, false), bus(bus),
+=======
+    Hypervisor(sdbusplus::bus_t& bus, const char* objPath) :
+        HypervisorInherit(bus, objPath,
+                          HypervisorInherit::action::emit_object_added),
+        bus(bus),
+>>>>>>> origin/master
         bootProgressChangeSignal(
             bus,
             sdbusRule::propertiesChanged(
@@ -80,10 +90,10 @@ class Hypervisor : public HypervisorInherit
      * @param[in]  msg              - Data associated with subscribed signal
      *
      */
-    void bootProgressChangeEvent(sdbusplus::message::message& msg);
+    void bootProgressChangeEvent(sdbusplus::message_t& msg);
 
     /** @brief Persistent sdbusplus DBus bus connection. */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     /** @brief Watch BootProgress changes to know hypervisor state **/
     sdbusplus::bus::match_t bootProgressChangeSignal;

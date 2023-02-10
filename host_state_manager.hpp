@@ -13,7 +13,7 @@
 #include <xyz/openbmc_project/State/Boot/Progress/server.hpp>
 #include <xyz/openbmc_project/State/OperatingSystem/Status/server.hpp>
 
-#include <experimental/filesystem>
+#include <filesystem>
 #include <functional>
 #include <string>
 
@@ -24,7 +24,7 @@ namespace state
 namespace manager
 {
 
-using HostInherit = sdbusplus::server::object::object<
+using HostInherit = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::State::server::Host,
     sdbusplus::xyz::openbmc_project::State::Boot::server::Progress,
     sdbusplus::xyz::openbmc_project::Control::Boot::server::RebootAttempts,
@@ -33,7 +33,7 @@ using HostInherit = sdbusplus::server::object::object<
 PHOSPHOR_LOG2_USING;
 
 namespace sdbusRule = sdbusplus::bus::match::rules;
-namespace fs = std::experimental::filesystem;
+namespace fs = std::filesystem;
 
 /** @class Host
  *  @brief OpenBMC host state management implementation.
@@ -51,9 +51,18 @@ class Host : public HostInherit
      *
      * @param[in] bus       - The Dbus bus object
      * @param[in] objPath   - The Dbus object path
+     * @param[in] id        - The Host id
      */
+<<<<<<< HEAD
     Host(sdbusplus::bus::bus& bus, const char* objPath) :
         HostInherit(bus, objPath, HostInherit::action::defer_emit), bus(bus),
+||||||| ba2241c
+    Host(sdbusplus::bus::bus& bus, const char* objPath) :
+        HostInherit(bus, objPath, true), bus(bus),
+=======
+    Host(sdbusplus::bus_t& bus, const char* objPath, size_t id) :
+        HostInherit(bus, objPath, HostInherit::action::defer_emit), bus(bus),
+>>>>>>> origin/master
         systemdSignalJobRemoved(
             bus,
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
@@ -68,15 +77,20 @@ class Host : public HostInherit
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
             std::bind(std::mem_fn(&Host::sysStateChangeJobNew), this,
                       std::placeholders::_1)),
-        settings(bus)
+        settings(bus, id), id(id)
     {
         // Enable systemd signals
         subscribeToSystemdSignals();
 
+        // create map of target name base on host id
+        createSystemdTargetMaps();
+
         // Will throw exception on fail
         determineInitialState();
 
-        attemptsLeft(BOOT_COUNT_MAX_ALLOWED);
+        // Sets auto-reboot attempts to max-allowed
+        attemptsLeft(sdbusplus::xyz::openbmc_project::Control::Boot::server::
+                         RebootAttempts::retryAttempts());
 
         // We deferred this until we could get our property correct
         this->emit_object_added();
@@ -95,27 +109,56 @@ class Host : public HostInherit
     HostState currentHostState(HostState value) override;
 
     /**
+     * @brief Set value for allowable auto-reboot count
+     *
+     * This override is responsible for ensuring that when external users
+     * set the number of automatic retry attempts that the number of
+     * automatic reboot attempts left will update accordingly.
+     *
+     * @param[in] value - desired Reboot count value
+     *
+     * @return number of reboot attempts allowed.
+     */
+    uint32_t retryAttempts(uint32_t value) override
+    {
+        if (sdbusplus::xyz::openbmc_project::Control::Boot::server::
+                RebootAttempts::attemptsLeft() != value)
+        {
+            info("Automatic reboot retry attempts set to: {VALUE} ", "VALUE",
+                 value);
+            sdbusplus::xyz::openbmc_project::Control::Boot::server::
+                RebootAttempts::attemptsLeft(value);
+        }
+
+        return (sdbusplus::xyz::openbmc_project::Control::Boot::server::
+                    RebootAttempts::retryAttempts(value));
+    }
+
+    /**
      * @brief Set host reboot count to default
      *
      * OpenBMC software controls the number of allowed reboot attempts so
      * any external set request of this property will be overridden by
-     * this function and set to the default.
+     * this function and set to the number of the allowed auto-reboot
+     * retry attempts found on the system.
      *
      * The only code responsible for decrementing the boot count resides
      * within this process and that will use the sub class interface
      * directly
      *
-     * @param[in] value      - Reboot count value, will be ignored
+     * @param[in] value  - Reboot count value
      *
-     * @return Default number of reboot attempts left
+     * @return number of reboot attempts left(allowed by retry attempts
+     * property)
      */
     uint32_t attemptsLeft(uint32_t value) override
     {
-        // value is ignored in this implementation
-        (void)(value);
         debug("External request to reset reboot count");
-        return (sdbusplus::xyz::openbmc_project::Control::Boot::server::
-                    RebootAttempts::attemptsLeft(BOOT_COUNT_MAX_ALLOWED));
+        auto retryAttempts = sdbusplus::xyz::openbmc_project::Control::Boot::
+            server::RebootAttempts::retryAttempts();
+        return (
+            sdbusplus::xyz::openbmc_project::Control::Boot::server::
+                RebootAttempts::attemptsLeft(std::min(value, retryAttempts)));
     }
 
   private:
@@ -134,6 +177,11 @@ class Host : public HostInherit
      * @return Will throw exceptions on failure
      **/
     void determineInitialState();
+
+    /**
+     * create systemd target instance names and mapping table
+     **/
+    void createSystemdTargetMaps();
 
     /** @brief Execute the transition request
      *
@@ -171,7 +219,7 @@ class Host : public HostInherit
      * @param[in]  msg       - Data associated with subscribed signal
      *
      */
-    void sysStateChangeJobRemoved(sdbusplus::message::message& msg);
+    void sysStateChangeJobRemoved(sdbusplus::message_t& msg);
 
     /** @brief Check if JobNew systemd signal is relevant to this object
      *
@@ -184,7 +232,7 @@ class Host : public HostInherit
      * @param[in]  msg       - Data associated with subscribed signal
      *
      */
-    void sysStateChangeJobNew(sdbusplus::message::message& msg);
+    void sysStateChangeJobNew(sdbusplus::message_t& msg);
 
     /** @brief Decrement reboot count
      *
@@ -212,7 +260,9 @@ class Host : public HostInherit
     {
         // version is not used currently
         (void)(version);
-        archive(convertForMessage(sdbusplus::xyz::openbmc_project::State::
+        archive(sdbusplus::xyz::openbmc_project::Control::Boot::server::
+                    RebootAttempts::retryAttempts(),
+                convertForMessage(sdbusplus::xyz::openbmc_project::State::
                                       server::Host::requestedHostTransition()),
                 convertForMessage(sdbusplus::xyz::openbmc_project::State::Boot::
                                       server::Progress::bootProgress()),
@@ -231,12 +281,21 @@ class Host : public HostInherit
     template <class Archive>
     void load(Archive& archive, const std::uint32_t version)
     {
-        // version is not used currently
-        (void)(version);
         std::string reqTranState;
         std::string bootProgress;
         std::string osState;
-        archive(reqTranState, bootProgress, osState);
+        // Older cereal archive without RetryAttempt may be implemented
+        // just set to (BOOT_COUNT_MAX_ALLOWED)
+        uint32_t retryAttempts = BOOT_COUNT_MAX_ALLOWED;
+        switch (version)
+        {
+            case 2:
+                archive(retryAttempts);
+                [[fallthrough]];
+            case 1:
+                archive(reqTranState, bootProgress, osState);
+                break;
+        }
         auto reqTran = Host::convertTransitionFromString(reqTranState);
         // When restoring, set the requested state with persistent value
         // but don't call the override which would execute it
@@ -247,28 +306,43 @@ class Host : public HostInherit
         sdbusplus::xyz::openbmc_project::State::OperatingSystem::server::
             Status::operatingSystemState(
                 Host::convertOSStatusFromString(osState));
+        sdbusplus::xyz::openbmc_project::Control::Boot::server::RebootAttempts::
+            retryAttempts(retryAttempts);
     }
 
     /** @brief Serialize and persist requested host state
      *
-     *  @param[in] dir - pathname of file where the serialized host state will
-     *                   be placed.
-     *
      *  @return fs::path - pathname of persisted requested host state.
      */
-    fs::path serialize(const fs::path& dir = fs::path(HOST_STATE_PERSIST_PATH));
+    fs::path serialize();
 
     /** @brief Deserialze a persisted requested host state.
-     *
-     *  @param[in] path - pathname of persisted host state file
      *
      *  @return bool - true if the deserialization was successful, false
      *                 otherwise.
      */
-    bool deserialize(const fs::path& path);
+    bool deserialize();
+
+    /**
+     * @brief Get target name of a HostState
+     *
+     * @param[in] state      -  The state of the host
+     *
+     * @return string - systemd target name of the state
+     */
+    const std::string& getTarget(HostState state);
+
+    /**
+     * @brief Get target name of a TransitionRequest
+     *
+     * @param[in] tranReq      -  Transition requested
+     *
+     * @return string - systemd target name of Requested transition
+     */
+    const std::string& getTarget(Transition tranReq);
 
     /** @brief Persistent sdbusplus DBus bus connection. */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus systemd JobRemoved signal **/
     sdbusplus::bus::match_t systemdSignalJobRemoved;
@@ -276,8 +350,20 @@ class Host : public HostInherit
     /** @brief Used to subscribe to dbus systemd JobNew signal **/
     sdbusplus::bus::match_t systemdSignalJobNew;
 
-    // Settings objects of interest
-    settings::Objects settings;
+    // Settings host objects of interest
+    settings::HostObjects settings;
+
+    /** @brief Host id. **/
+    const size_t id = 0;
+
+    /** @brief HostState to systemd target mapping table. **/
+    std::map<HostState, std::string> stateTargetTable;
+
+    /** @brief Requested Transition to systemd target mapping table. **/
+    std::map<Transition, std::string> transitionTargetTable;
+
+    /** @brief Target called when a host crash occurs **/
+    std::string hostCrashTarget;
 };
 
 } // namespace manager

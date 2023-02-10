@@ -9,6 +9,7 @@
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/exception.hpp>
 #include <xyz/openbmc_project/Condition/HostFirmware/server.hpp>
+#include <xyz/openbmc_project/State/Chassis/server.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -39,14 +40,15 @@ constexpr auto CONDITION_HOST_PROPERTY = "CurrentFirmwareCondition";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 constexpr auto CHASSIS_STATE_SVC = "xyz.openbmc_project.State.Chassis";
-constexpr auto CHASSIS_STATE_PATH = "/xyz/openbmc_project/state/chassis0";
+constexpr auto CHASSIS_STATE_PATH = "/xyz/openbmc_project/state/chassis";
 constexpr auto CHASSIS_STATE_INTF = "xyz.openbmc_project.State.Chassis";
 constexpr auto CHASSIS_STATE_POWER_PROP = "CurrentPowerState";
 
 // Find all implementations of Condition interface and check if host is
 // running over it
-bool checkFirmwareConditionRunning(sdbusplus::bus::bus& bus)
+bool checkFirmwareConditionRunning(sdbusplus::bus_t& bus)
 {
+    using FirmwareCondition = HostFirmware::FirmwareCondition;
     // Find all implementations of host firmware condition interface
     auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
                                       MAPPER_INTERFACE, "GetSubTree");
@@ -61,7 +63,7 @@ bool checkFirmwareConditionRunning(sdbusplus::bus::bus& bus)
         auto mapperResponseMsg = bus.call(mapper);
         mapperResponseMsg.read(mapperResponse);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error(
             "Error in mapper GetSubTree call for HostFirmware condition: {ERROR}",
@@ -99,19 +101,22 @@ bool checkFirmwareConditionRunning(sdbusplus::bus::bus& bus)
                               CONDITION_HOST_PROPERTY);
 
                 auto response = bus.call(method);
+                std::variant<FirmwareCondition> currentFwCondV;
+                response.read(currentFwCondV);
+                auto currentFwCond =
+                    std::get<FirmwareCondition>(currentFwCondV);
 
-                std::variant<std::string> currentFwCond;
-                response.read(currentFwCond);
+                info(
+                    "Read host fw condition {COND_VALUE} from {COND_SERVICE}, {COND_PATH}",
+                    "COND_VALUE", currentFwCond, "COND_SERVICE", service,
+                    "COND_PATH", path);
 
-                if (std::get<std::string>(currentFwCond) ==
-                    "xyz.openbmc_project.Condition.HostFirmware."
-                    "FirmwareCondition."
-                    "Running")
+                if (currentFwCond == FirmwareCondition::Running)
                 {
                     return true;
                 }
             }
-            catch (const sdbusplus::exception::exception& e)
+            catch (const sdbusplus::exception_t& e)
             {
                 error("Error reading HostFirmware condition, error: {ERROR}, "
                       "service: {SERVICE} path: {PATH}",
@@ -124,44 +129,48 @@ bool checkFirmwareConditionRunning(sdbusplus::bus::bus& bus)
 }
 
 // Helper function to check if chassis power is on
-bool isChassiPowerOn(sdbusplus::bus::bus& bus)
+bool isChassiPowerOn(sdbusplus::bus_t& bus, size_t id)
 {
+    auto svcname = std::string{CHASSIS_STATE_SVC} + std::to_string(id);
+    auto objpath = std::string{CHASSIS_STATE_PATH} + std::to_string(id);
+
     try
     {
-        auto method = bus.new_method_call(CHASSIS_STATE_SVC, CHASSIS_STATE_PATH,
+        using PowerState =
+            sdbusplus::xyz::openbmc_project::State::server::Chassis::PowerState;
+        auto method = bus.new_method_call(svcname.c_str(), objpath.c_str(),
                                           PROPERTY_INTERFACE, "Get");
         method.append(CHASSIS_STATE_INTF, CHASSIS_STATE_POWER_PROP);
 
         auto response = bus.call(method);
+        std::variant<PowerState> currentPowerStateV;
+        response.read(currentPowerStateV);
 
-        std::variant<std::string> currentPowerState;
-        response.read(currentPowerState);
+        auto currentPowerState = std::get<PowerState>(currentPowerStateV);
 
-        if (std::get<std::string>(currentPowerState) ==
-            "xyz.openbmc_project.State.Chassis.PowerState.On")
+        if (currentPowerState == PowerState::On)
         {
             return true;
         }
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Error reading Chassis Power State, error: {ERROR}, "
               "service: {SERVICE} path: {PATH}",
-              "ERROR", e, "SERVICE", CHASSIS_STATE_SVC, "PATH",
-              CHASSIS_STATE_PATH);
+              "ERROR", e, "SERVICE", svcname.c_str(), "PATH", objpath.c_str());
         throw;
     }
     return false;
 }
 
-bool isHostRunning()
+bool isHostRunning(size_t id)
 {
     info("Check if host is running");
 
     auto bus = sdbusplus::bus::new_default();
 
     // No need to check if chassis power is not on
-    if (!isChassiPowerOn(bus))
+    if (!isChassiPowerOn(bus, id))
     {
         info("Chassis power not on, exit");
         return false;
@@ -171,16 +180,19 @@ bool isHostRunning()
     // application that could possibly implement the needed interface have
     // been started. However, the use of mapper to find those interfaces means
     // we have a condition where the interface may be on D-Bus but not stored
-    // within mapper yet. Keep it simple and just build one retry into the
-    // check if it's found the host is not up. This service is only called if
-    // chassis power is on when the BMC comes up, so this wont impact most
-    // normal cases where the BMC is rebooted with chassis power off. In
-    // cases where chassis power is on, the host is likely running so we want
-    // to be sure we check all interfaces
-    for (int i = 0; i < 2; i++)
+    // within mapper yet. There are five built in retries to check if it's
+    // found the host is not up. This service is only called if chassis power
+    // is on when the BMC comes up, so this wont impact most normal cases
+    // where the BMC is rebooted with chassis power off. In cases where
+    // chassis power is on, the host is likely running so we want to be sure
+    // we check all interfaces
+    for (int i = 0; i < 5; i++)
     {
+        debug(
+            "Introspecting new bus objects for bus id: {ID} sleeping for 1 second.",
+            "ID", id);
         // Give mapper a small window to introspect new objects on bus
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         if (checkFirmwareConditionRunning(bus))
         {
             info("Host is running!");

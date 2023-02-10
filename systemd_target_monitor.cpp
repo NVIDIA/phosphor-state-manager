@@ -1,3 +1,4 @@
+#include "systemd_service_parser.hpp"
 #include "systemd_target_parser.hpp"
 #include "systemd_target_signal.hpp"
 
@@ -34,6 +35,9 @@ void print_usage(void)
     std::cout << "[-f <file1> -f <file2> ...] : Full path to json file(s) with "
                  "target/error mappings"
               << std::endl;
+    std::cout << "[-s <file1> -s <file2> ...] : Full path to json file(s) with "
+                 "services to monitor for errors"
+              << std::endl;
     return;
 }
 
@@ -42,24 +46,27 @@ int main(int argc, char* argv[])
     auto bus = sdbusplus::bus::new_default();
     auto event = sdeventplus::Event::get_default();
     bus.attach_event(event.get(), SD_EVENT_PRIORITY_NORMAL);
-    std::vector<std::string> filePaths;
+    std::vector<std::string> targetFilePaths;
+    std::vector<std::string> serviceFilePaths;
 
-    CLI::App app{"OpenBmc systemd target monitor"};
-    app.add_option("-f,--file", filePaths,
+    CLI::App app{"OpenBmc systemd target and service monitor"};
+    app.add_option("-f,--file", targetFilePaths,
                    "Full path to json file(s) with target/error mappings");
+    app.add_option("-s,--service", serviceFilePaths,
+                   "Full path to json file(s) with services to monitor");
     app.add_flag("-v", gVerbose, "Enable verbose output");
 
     CLI11_PARSE(app, argc, argv);
 
-    if (filePaths.empty())
+    // target file input required
+    if (targetFilePaths.empty())
     {
         error("No input files");
         print_usage();
         exit(-1);
     }
 
-    TargetErrorData targetData = parseFiles(filePaths);
-
+    TargetErrorData targetData = parseFiles(targetFilePaths);
     if (targetData.size() == 0)
     {
         error("Invalid input files, no targets found");
@@ -67,12 +74,19 @@ int main(int argc, char* argv[])
         exit(-1);
     }
 
+    ServiceMonitorData serviceData;
+    if (!serviceFilePaths.empty())
+    {
+        serviceData = parseServiceFiles(serviceFilePaths);
+    }
+
     if (gVerbose)
     {
         dump_targets(targetData);
     }
 
-    phosphor::state::manager::SystemdTargetLogging targetMon(targetData, bus);
+    phosphor::state::manager::SystemdTargetLogging targetMon(targetData,
+                                                             serviceData, bus);
 
     // Subscribe to systemd D-bus signals indicating target completions
     targetMon.subscribeToSystemdSignals();

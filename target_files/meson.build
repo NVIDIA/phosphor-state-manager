@@ -1,4 +1,6 @@
 unit_files = [
+    'obmc-bmc-service-quiesce@.target',
+    'obmc-chassis-blackout@.target',
     'obmc-chassis-hard-poweroff@.target',
     'obmc-chassis-powered-off@.target',
     'obmc-chassis-poweroff@.target',
@@ -11,6 +13,7 @@ unit_files = [
     'obmc-host-crash@.target',
     'obmc-host-diagnostic-mode@.target',
     'obmc-host-force-warm-reboot@.target',
+    'obmc-host-graceful-quiesce@.target',
     'obmc-host-quiesce@.target',
     'obmc-host-reboot@.target',
     'obmc-host-reset-running@.target',

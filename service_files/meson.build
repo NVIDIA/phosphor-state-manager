@@ -7,13 +7,15 @@ unit_files = [
     'phosphor-reset-host-running@.service',
     'phosphor-reset-sensor-states@.service',
     'xyz.openbmc_project.State.BMC.service',
-    'xyz.openbmc_project.State.Chassis.service',
-    'xyz.openbmc_project.State.Host.service',
+    'xyz.openbmc_project.State.Chassis@.service',
+    'xyz.openbmc_project.State.Host@.service',
     'xyz.openbmc_project.State.Hypervisor.service',
-    'xyz.openbmc_project.State.ScheduledHostTransition.service',
+    'xyz.openbmc_project.State.ScheduledHostTransition@.service',
     'phosphor-clear-one-time@.service',
     'phosphor-set-host-transition-to-off@.service',
-    'phosphor-set-host-transition-to-running@.service'
+    'phosphor-set-host-transition-to-running@.service',
+    'phosphor-chassis-check-power-status@.service',
+    'phosphor-bmc-security-check.service'
 ]
 
 foreach u : unit_files

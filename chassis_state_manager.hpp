@@ -12,7 +12,7 @@
 #include <sdeventplus/utility/timer.hpp>
 
 #include <chrono>
-#include <experimental/filesystem>
+#include <filesystem>
 #include <functional>
 
 namespace phosphor
@@ -22,11 +22,11 @@ namespace state
 namespace manager
 {
 
-using ChassisInherit = sdbusplus::server::object::object<
+using ChassisInherit = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::State::server::Chassis,
     sdbusplus::xyz::openbmc_project::State::server::PowerOnHours>;
 namespace sdbusRule = sdbusplus::bus::match::rules;
-namespace fs = std::experimental::filesystem;
+namespace fs = std::filesystem;
 
 /** @class Chassis
  *  @brief OpenBMC chassis state management implementation.
@@ -44,9 +44,19 @@ class Chassis : public ChassisInherit
      *
      * @param[in] bus       - The Dbus bus object
      * @param[in] objPath   - The Dbus object path
+     * @param[in] id        - Chassis id
      */
+<<<<<<< HEAD
     Chassis(sdbusplus::bus::bus& bus, const char* objPath) :
         ChassisInherit(bus, objPath, ChassisInherit::action::defer_emit), bus(bus),
+||||||| ba2241c
+    Chassis(sdbusplus::bus::bus& bus, const char* objPath) :
+        ChassisInherit(bus, objPath, true), bus(bus),
+=======
+    Chassis(sdbusplus::bus_t& bus, const char* objPath, size_t id) :
+        ChassisInherit(bus, objPath, ChassisInherit::action::defer_emit),
+        bus(bus),
+>>>>>>> origin/master
         systemdSignals(
             bus,
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
@@ -54,14 +64,18 @@ class Chassis : public ChassisInherit
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
             std::bind(std::mem_fn(&Chassis::sysStateChange), this,
                       std::placeholders::_1)),
-        pohTimer(sdeventplus::Event::get_default(),
-                 std::bind(&Chassis::pohCallback, this), std::chrono::hours{1},
-                 std::chrono::minutes{1})
+        id(id), pohTimer(sdeventplus::Event::get_default(),
+                         std::bind(&Chassis::pohCallback, this),
+                         std::chrono::hours{1}, std::chrono::minutes{1})
     {
         subscribeToSystemdSignals();
 
+        createSystemdTargetTable();
+
         restoreChassisStateChangeTime();
 
+        // No default in PDI so start at Good, skip D-Bus signal for now
+        currentPowerStatus(PowerStatus::Good, true);
         determineInitialState();
 
         restorePOHCounter(); // restore POHCounter from persisted file
@@ -83,8 +97,30 @@ class Chassis : public ChassisInherit
     void startPOHCounter();
 
   private:
+    /** @brief Create systemd target instance names and mapping table */
+    void createSystemdTargetTable();
+
     /** @brief Determine initial chassis state and set internally */
     void determineInitialState();
+
+    /** @brief Determine status of power into system by examining all the
+     *        power-related interfaces of interest
+     */
+    void determineStatusOfPower();
+
+    /** @brief Determine status of power provided by an Uninterruptible Power
+     *         Supply into the system
+     *
+     *  @return True if UPS power is good, false otherwise
+     */
+    bool determineStatusOfUPSPower();
+
+    /** @brief Determine status of power provided by the power supply units into
+     *         the system
+     *
+     *  @return True if PSU power is good, false otherwise
+     */
+    bool determineStatusOfPSUPower();
 
     /**
      * @brief subscribe to the systemd signals
@@ -95,14 +131,22 @@ class Chassis : public ChassisInherit
      **/
     void subscribeToSystemdSignals();
 
-    /** @brief Execute the transition request
+    /** @brief Start the systemd unit requested
      *
-     * This function calls the appropriate systemd target for the input
-     * transition.
+     * This function calls `StartUnit` on the systemd unit given.
      *
-     * @param[in] tranReq    - Transition requested
+     * @param[in] sysdUnit    - Systemd unit
      */
-    void executeTransition(Transition tranReq);
+    void startUnit(const std::string& sysdUnit);
+
+    /** @brief Restart the systemd unit requested
+     *
+     * This function calls `RestartUnit` on the systemd unit given.
+     * This is useful when needing to restart a service that is already running
+     *
+     * @param[in] sysdUnit    - Systemd unit to restart
+     */
+    void restartUnit(const std::string& sysdUnit);
 
     /**
      * @brief Determine if target is active
@@ -124,13 +168,25 @@ class Chassis : public ChassisInherit
      * @param[in]  msg       - Data associated with subscribed signal
      *
      */
-    int sysStateChange(sdbusplus::message::message& msg);
+    int sysStateChange(sdbusplus::message_t& msg);
 
     /** @brief Persistent sdbusplus DBus connection. */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus systemd signals **/
     sdbusplus::bus::match_t systemdSignals;
+
+    /** @brief Watch for any changes to UPS properties **/
+    std::unique_ptr<sdbusplus::bus::match_t> uPowerPropChangeSignal;
+
+    /** @brief Watch for any changes to PowerSystemInputs properties **/
+    std::unique_ptr<sdbusplus::bus::match_t> powerSysInputsPropChangeSignal;
+
+    /** @brief Chassis id. **/
+    const size_t id = 0;
+
+    /** @brief Transition state to systemd target mapping table. **/
+    std::map<Transition, std::string> systemdTargetTable;
 
     /** @brief Used to Set value of POHCounter */
     uint32_t pohCounter(uint32_t value) override;
@@ -143,23 +199,18 @@ class Chassis : public ChassisInherit
 
     /** @brief Serialize and persist requested POH counter.
      *
-     *  @param[in] dir - pathname of file where the serialized POH counter will
-     *                   be placed.
-     *
      *  @return fs::path - pathname of persisted requested POH counter.
      */
-    fs::path
-        serializePOH(const fs::path& dir = fs::path(POH_COUNTER_PERSIST_PATH));
+    fs::path serializePOH();
 
     /** @brief Deserialize a persisted requested POH counter.
      *
-     *  @param[in] path - pathname of persisted POH counter file
      *  @param[in] retCounter - deserialized POH counter value
      *
      *  @return bool - true if the deserialization was successful, false
      *                 otherwise.
      */
-    bool deserializePOH(const fs::path& path, uint32_t& retCounter);
+    bool deserializePOH(uint32_t& retCounter);
 
     /** @brief Sets the LastStateChangeTime property and persists it. */
     void setStateChangeTime();
@@ -201,6 +252,26 @@ class Chassis : public ChassisInherit
      *  @return true if fault detected, else false
      */
     bool standbyVoltageRegulatorFault();
+
+    /** @brief Process UPS property changes
+     *
+     * Instance specific interface to monitor for changes to the UPS
+     * properties which may impact CurrentPowerStatus
+     *
+     * @param[in]  msg              - Data associated with subscribed signal
+     *
+     */
+    void uPowerChangeEvent(sdbusplus::message_t& msg);
+
+    /** @brief Process PowerSystemInputs property changes
+     *
+     * Instance specific interface to monitor for changes to the
+     * PowerSystemInputs properties which may impact CurrentPowerStatus
+     *
+     * @param[in]  msg              - Data associated with subscribed signal
+     *
+     */
+    void powerSysInputsChangeEvent(sdbusplus::message_t& msg);
 };
 
 } // namespace manager

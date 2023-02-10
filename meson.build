@@ -10,6 +10,7 @@ project(
     license: 'Apache-2.0',
     version: '0.1',
 )
+cpp = meson.get_compiler('cpp')
 
 build_host_gpios = get_option('host-gpios')
 
@@ -44,6 +45,10 @@ conf.set(
     'BOOT_COUNT_MAX_ALLOWED', get_option('boot-count-max-allowed'))
 conf.set(
     'CLASS_VERSION', get_option('class-version'))
+conf.set_quoted(
+    'SYSFS_SECURE_BOOT_PATH', get_option('sysfs-secure-boot-path'))
+conf.set_quoted(
+    'SYSFS_ABR_IMAGE_PATH', get_option('sysfs-abr-image-path'))
 if build_host_gpios.enabled()
     conf.set_quoted(
         'HOST_GPIOS_BUSNAME', get_option('host-gpios-busname'))
@@ -51,7 +56,16 @@ if build_host_gpios.enabled()
         'HOST_GPIOS_OBJPATH', get_option('host-gpios-objpath'))
 endif
 
+conf.set10(
+    'ONLY_RUN_APR_ON_POWER_LOSS', get_option('only-run-apr-on-power-loss'))
+
 # globals shared across applications
+conf.set_quoted(
+    'BASE_FILE_DIR', '/run/openbmc/')
+
+conf.set_quoted(
+    'CHASSIS_LOST_POWER_FILE', '/run/openbmc/chassis@%d-lost-power')
+
 conf.set_quoted(
     'HOST_RUNNING_FILE', '/run/openbmc/host@%d-on')
 
@@ -69,17 +83,58 @@ sdeventplus = dependency('sdeventplus')
 phosphorlogging = dependency('phosphor-logging')
 phosphordbusinterfaces = dependency('phosphor-dbus-interfaces')
 libgpiod = dependency('libgpiod', version : '>=1.4.1')
+fmt = dependency('fmt')
 
-cppfs = meson.get_compiler('cpp').find_library('stdc++fs')
+if cpp.has_header('nlohmann/json.hpp')
+    nlohmann_json = declare_dependency()
+else
+    subproject('nlohmann-json')
+    nlohmann_json = declare_dependency(
+        include_directories: [
+            'subprojects/nlohmann-json/single_include',
+            'subprojects/nlohmann-json/single_include/nlohmann',
+        ]
+    )
+endif
+
+if cpp.has_header('CLI/CLI.hpp')
+    CLI11 = declare_dependency()
+else
+    CLI11 = dependency('CLI11')
+endif
+
+# Get Cereal dependency.
+cereal = dependency('cereal', required: false)
+has_cereal = cpp.has_header_symbol(
+    'cereal/cereal.hpp',
+    'cereal::specialize',
+    dependencies: cereal,
+    required: false)
+if not has_cereal
+    cereal_opts = import('cmake').subproject_options()
+    cereal_opts.add_cmake_defines({'BUILD_TESTS': 'OFF'})
+    cereal_proj = import('cmake').subproject(
+        'cereal',
+        options: cereal_opts,
+        required: false)
+    assert(cereal_proj.found(), 'cereal is required')
+    cereal = cereal_proj.dependency('cereal')
+endif
 
 executable('phosphor-host-state-manager',
             'host_state_manager.cpp',
             'host_state_manager_main.cpp',
             'settings.cpp',
             'host_check.cpp',
+            'utils.cpp',
             dependencies: [
-            sdbusplus, sdeventplus, phosphorlogging,
-            phosphordbusinterfaces, cppfs
+                cereal,
+                fmt,
+                libgpiod,
+                phosphordbusinterfaces,
+                phosphorlogging,
+                sdbusplus,
+                sdeventplus,
             ],
     implicit_include_directories: true,
     install: true
@@ -90,8 +145,10 @@ executable('phosphor-hypervisor-state-manager',
             'hypervisor_state_manager_main.cpp',
             'settings.cpp',
             dependencies: [
-            sdbusplus, sdeventplus, phosphorlogging,
-            phosphordbusinterfaces, cppfs
+                phosphordbusinterfaces,
+                phosphorlogging,
+                sdbusplus,
+                sdeventplus,
             ],
     implicit_include_directories: true,
     install: true
@@ -100,9 +157,30 @@ executable('phosphor-hypervisor-state-manager',
 executable('phosphor-chassis-state-manager',
             'chassis_state_manager.cpp',
             'chassis_state_manager_main.cpp',
+            'utils.cpp',
             dependencies: [
-            sdbusplus, sdeventplus, phosphorlogging,
-            phosphordbusinterfaces, cppfs, libgpiod
+                cereal,
+                fmt,
+                libgpiod,
+                nlohmann_json,
+                phosphordbusinterfaces,
+                phosphorlogging,
+                sdbusplus,
+                sdeventplus,
+            ],
+    implicit_include_directories: true,
+    install: true
+)
+
+executable('phosphor-chassis-check-power-status',
+            'chassis_check_power_status.cpp',
+            'utils.cpp',
+            dependencies: [
+                fmt,
+                libgpiod,
+                phosphordbusinterfaces,
+                phosphorlogging,
+                sdbusplus,
             ],
     implicit_include_directories: true,
     install: true
@@ -111,9 +189,14 @@ executable('phosphor-chassis-state-manager',
 executable('phosphor-bmc-state-manager',
             'bmc_state_manager.cpp',
             'bmc_state_manager_main.cpp',
+            'utils.cpp',
             dependencies: [
-            sdbusplus, sdeventplus, phosphorlogging,
-            phosphordbusinterfaces, cppfs
+                fmt,
+                libgpiod,
+                phosphordbusinterfaces,
+                phosphorlogging,
+                sdbusplus,
+                sdeventplus,
             ],
     implicit_include_directories: true,
     install: true
@@ -122,19 +205,31 @@ executable('phosphor-bmc-state-manager',
 executable('phosphor-discover-system-state',
             'discover_system_state.cpp',
             'settings.cpp',
+            'utils.cpp',
             dependencies: [
-            sdbusplus, phosphorlogging
+                cereal,
+                fmt,
+                libgpiod,
+                phosphorlogging,
+                sdbusplus,
             ],
     implicit_include_directories: true,
     install: true
 )
 
 executable('phosphor-systemd-target-monitor',
+            'systemd_service_parser.cpp',
             'systemd_target_monitor.cpp',
             'systemd_target_parser.cpp',
             'systemd_target_signal.cpp',
+            'utils.cpp',
             dependencies: [
-            sdbusplus, sdeventplus, phosphorlogging
+                CLI11,
+                libgpiod,
+                nlohmann_json,
+                phosphorlogging,
+                sdbusplus,
+                sdeventplus,
             ],
     implicit_include_directories: true,
     install: true
@@ -145,7 +240,11 @@ executable('phosphor-scheduled-host-transition',
             'scheduled_host_transition.cpp',
             'utils.cpp',
             dependencies: [
-            sdbusplus, sdeventplus, phosphorlogging
+                cereal,
+                libgpiod,
+                phosphorlogging,
+                sdbusplus,
+                sdeventplus,
             ],
     implicit_include_directories: true,
     install: true
@@ -154,7 +253,19 @@ executable('phosphor-scheduled-host-transition',
 executable('phosphor-host-reset-recovery',
             'host_reset_recovery.cpp',
             dependencies: [
-            sdbusplus, phosphorlogging
+                phosphorlogging,
+                sdbusplus,
+            ],
+    implicit_include_directories: true,
+    install: true
+)
+
+executable('phosphor-secure-boot-check',
+            'secure_boot_check.cpp',
+            'utils.cpp',
+            dependencies: [
+            fmt, sdbusplus,
+            phosphorlogging, libgpiod
             ],
     implicit_include_directories: true,
     install: true
@@ -163,6 +274,11 @@ executable('phosphor-host-reset-recovery',
 install_data('obmcutil',
         install_mode: 'rwxr-xr-x',
         install_dir: get_option('bindir')
+)
+
+install_data('scripts/host-reboot',
+        install_mode: 'rwxr-xr-x',
+        install_dir: get_option('libexecdir')
 )
 
 systemd = dependency('systemd')
@@ -195,6 +311,7 @@ gmock = dependency('gmock', disabler: true, required: build_tests)
           'systemd_target_parser.cpp',
           dependencies: [
               gtest,
+              nlohmann_json,
           ],
           implicit_include_directories: true,
           include_directories: '../'
@@ -206,8 +323,14 @@ gmock = dependency('gmock', disabler: true, required: build_tests)
       executable('test_systemd_signal',
           './test/systemd_signal.cpp',
           'systemd_target_signal.cpp',
+          'utils.cpp',
           dependencies: [
-              gtest, sdbusplus, sdeventplus, phosphorlogging,
+              gtest,
+              libgpiod,
+              nlohmann_json,
+              phosphorlogging,
+              sdbusplus,
+              sdeventplus,
           ],
           implicit_include_directories: true,
           include_directories: '../'
@@ -221,7 +344,13 @@ gmock = dependency('gmock', disabler: true, required: build_tests)
           'scheduled_host_transition.cpp',
           'utils.cpp',
           dependencies: [
-              gtest, gmock, sdbusplus, sdeventplus, phosphorlogging,
+              cereal,
+              gmock,
+              gtest,
+              libgpiod,
+              phosphorlogging,
+              sdbusplus,
+              sdeventplus,
           ],
           implicit_include_directories: true,
           include_directories: '../'
@@ -234,7 +363,10 @@ gmock = dependency('gmock', disabler: true, required: build_tests)
           './test/hypervisor_state.cpp',
           'hypervisor_state_manager.cpp',
           dependencies: [
-              gtest, sdbusplus, sdeventplus, phosphorlogging,
+              gtest,
+              phosphorlogging,
+              sdbusplus,
+              sdeventplus,
           ],
           implicit_include_directories: true,
           include_directories: '../'

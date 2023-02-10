@@ -18,7 +18,7 @@ namespace manager
 
 using Transition =
     sdbusplus::xyz::openbmc_project::State::server::Host::Transition;
-using ScheduledHostTransitionInherit = sdbusplus::server::object::object<
+using ScheduledHostTransitionInherit = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::State::server::ScheduledHostTransition>;
 
 /** @class ScheduledHostTransition
@@ -29,11 +29,24 @@ using ScheduledHostTransitionInherit = sdbusplus::server::object::object<
 class ScheduledHostTransition : public ScheduledHostTransitionInherit
 {
   public:
+<<<<<<< HEAD
     ScheduledHostTransition(sdbusplus::bus::bus& bus, const char* objPath,
                             const sdeventplus::Event& event) :
         ScheduledHostTransitionInherit(
             bus, objPath, ScheduledHostTransition::action::defer_emit),
         bus(bus), event(event),
+||||||| ba2241c
+    ScheduledHostTransition(sdbusplus::bus::bus& bus, const char* objPath,
+                            const sdeventplus::Event& event) :
+        ScheduledHostTransitionInherit(bus, objPath, true),
+        bus(bus), event(event),
+=======
+    ScheduledHostTransition(sdbusplus::bus_t& bus, const char* objPath,
+                            size_t id, const sdeventplus::Event& event) :
+        ScheduledHostTransitionInherit(
+            bus, objPath, ScheduledHostTransition::action::defer_emit),
+        bus(bus), id(id), event(event),
+>>>>>>> origin/master
         timer(event, std::bind(&ScheduledHostTransition::callback, this))
     {
         initialize();
@@ -60,7 +73,10 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
     friend class TestScheduledHostTransition;
 
     /** @brief sdbusplus bus client connection */
-    sdbusplus::bus::bus& bus;
+    sdbusplus::bus_t& bus;
+
+    /** @brief Host id. **/
+    const size_t id = 0;
 
     /** @brief sdbusplus event */
     const sdeventplus::Event& event;

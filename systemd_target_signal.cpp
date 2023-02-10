@@ -1,5 +1,7 @@
 #include "systemd_target_signal.hpp"
 
+#include "utils.hpp"
+
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
@@ -19,8 +21,33 @@ PHOSPHOR_LOG2_USING;
 
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
 
+void SystemdTargetLogging::startBmcQuiesceTarget()
+{
+    auto method = this->bus.new_method_call(
+        "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager", "StartUnit");
+
+    // TODO: Enhance when needed to support multiple-bmc instance systems
+    method.append("obmc-bmc-service-quiesce@0.target");
+    method.append("replace");
+    try
+    {
+        this->bus.call_noreply(method);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        error("Failed to start BMC quiesce target, exception:{ERROR}", "ERROR",
+              e);
+        // just continue, this is error path anyway so we're just doing what
+        // we can
+    }
+
+    return;
+}
+
 void SystemdTargetLogging::logError(const std::string& errorLog,
-                                    const std::string& result)
+                                    const std::string& result,
+                                    const std::string& unit)
 {
     auto method = this->bus.new_method_call(
         "xyz.openbmc_project.Logging", "/xyz/openbmc_project/logging",
@@ -28,13 +55,14 @@ void SystemdTargetLogging::logError(const std::string& errorLog,
     // Signature is ssa{ss}
     method.append(errorLog);
     method.append("xyz.openbmc_project.Logging.Entry.Level.Critical");
-    method.append(std::array<std::pair<std::string, std::string>, 1>(
-        {std::pair<std::string, std::string>({"SYSTEMD_RESULT", result})}));
+    method.append(std::array<std::pair<std::string, std::string>, 2>(
+        {std::pair<std::string, std::string>({"SYSTEMD_RESULT", result}),
+         std::pair<std::string, std::string>({"SYSTEMD_UNIT", unit})}));
     try
     {
         this->bus.call_noreply(method);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         error("Failed to create systemd target error, error:{ERROR_MSG}, "
               "result:{RESULT}, exception:{ERROR}",
@@ -42,8 +70,8 @@ void SystemdTargetLogging::logError(const std::string& errorLog,
     }
 }
 
-const std::string* SystemdTargetLogging::processError(const std::string& unit,
-                                                      const std::string& result)
+const std::string SystemdTargetLogging::processError(const std::string& unit,
+                                                     const std::string& result)
 {
     auto targetEntry = this->targetData.find(unit);
     if (targetEntry != this->targetData.end())
@@ -56,13 +84,36 @@ const std::string* SystemdTargetLogging::processError(const std::string& unit,
             info(
                 "Monitored systemd unit has hit an error, unit:{UNIT}, result:{RESULT}",
                 "UNIT", unit, "RESULT", result);
-            return (&targetEntry->second.errorToLog);
+
+            // Generate a BMC dump when a monitored target fails
+            utils::createBmcDump(this->bus);
+            return (targetEntry->second.errorToLog);
         }
     }
-    return nullptr;
+
+    // Check if it's in our list of services to monitor
+    if (std::find(this->serviceData.begin(), this->serviceData.end(), unit) !=
+        this->serviceData.end())
+    {
+        if (result == "failed")
+        {
+            info(
+                "Monitored systemd service has hit an error, unit:{UNIT}, result:{RESULT}",
+                "UNIT", unit, "RESULT", result);
+
+            // Generate a BMC dump when a critical service fails
+            utils::createBmcDump(this->bus);
+            // Enter BMC Quiesce when a critical service fails
+            startBmcQuiesceTarget();
+            return (std::string{
+                "xyz.openbmc_project.State.Error.CriticalServiceFailure"});
+        }
+    }
+
+    return (std::string{});
 }
 
-void SystemdTargetLogging::systemdUnitChange(sdbusplus::message::message& msg)
+void SystemdTargetLogging::systemdUnitChange(sdbusplus::message_t& msg)
 {
     uint32_t id;
     sdbusplus::message::object_path objPath;
@@ -74,19 +125,18 @@ void SystemdTargetLogging::systemdUnitChange(sdbusplus::message::message& msg)
     // In most cases it will just be success, in which case just return
     if (result != "done")
     {
-        const std::string* error = processError(unit, result);
+        const std::string error = processError(unit, result);
 
         // If this is a monitored error then log it
-        if (error)
+        if (!error.empty())
         {
-            logError(*error, result);
+            logError(error, result, unit);
         }
     }
     return;
 }
 
-void SystemdTargetLogging::processNameChangeSignal(
-    sdbusplus::message::message& msg)
+void SystemdTargetLogging::processNameChangeSignal(sdbusplus::message_t& msg)
 {
     std::string name;      // well-known
     std::string old_owner; // unique-name
@@ -113,7 +163,7 @@ void SystemdTargetLogging::subscribeToSystemdSignals()
     {
         this->bus.call(method);
     }
-    catch (const sdbusplus::exception::exception& e)
+    catch (const sdbusplus::exception_t& e)
     {
         // If error indicates systemd is not on dbus yet then do nothing.
         // The systemdNameChangeSignals callback will detect when it is on
