@@ -53,16 +53,8 @@ class Host : public HostInherit
      * @param[in] objPath   - The Dbus object path
      * @param[in] id        - The Host id
      */
-<<<<<<< HEAD
-    Host(sdbusplus::bus::bus& bus, const char* objPath) :
-        HostInherit(bus, objPath, HostInherit::action::defer_emit), bus(bus),
-||||||| ba2241c
-    Host(sdbusplus::bus::bus& bus, const char* objPath) :
-        HostInherit(bus, objPath, true), bus(bus),
-=======
     Host(sdbusplus::bus_t& bus, const char* objPath, size_t id) :
         HostInherit(bus, objPath, HostInherit::action::defer_emit), bus(bus),
->>>>>>> origin/master
         systemdSignalJobRemoved(
             bus,
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +

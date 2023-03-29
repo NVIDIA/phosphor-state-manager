@@ -29,24 +29,11 @@ using ScheduledHostTransitionInherit = sdbusplus::server::object_t<
 class ScheduledHostTransition : public ScheduledHostTransitionInherit
 {
   public:
-<<<<<<< HEAD
-    ScheduledHostTransition(sdbusplus::bus::bus& bus, const char* objPath,
-                            const sdeventplus::Event& event) :
-        ScheduledHostTransitionInherit(
-            bus, objPath, ScheduledHostTransition::action::defer_emit),
-        bus(bus), event(event),
-||||||| ba2241c
-    ScheduledHostTransition(sdbusplus::bus::bus& bus, const char* objPath,
-                            const sdeventplus::Event& event) :
-        ScheduledHostTransitionInherit(bus, objPath, true),
-        bus(bus), event(event),
-=======
     ScheduledHostTransition(sdbusplus::bus_t& bus, const char* objPath,
                             size_t id, const sdeventplus::Event& event) :
         ScheduledHostTransitionInherit(
             bus, objPath, ScheduledHostTransition::action::defer_emit),
         bus(bus), id(id), event(event),
->>>>>>> origin/master
         timer(event, std::bind(&ScheduledHostTransition::callback, this))
     {
         initialize();
