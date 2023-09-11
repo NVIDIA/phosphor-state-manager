@@ -25,7 +25,11 @@ conf.set_quoted(
 conf.set_quoted(
     'CHASSIS_BUSNAME', get_option('chassis-busname'))
 conf.set_quoted(
+    'CUSTOM_BUSNAME', get_option('configurable-state-manager-busname'))
+conf.set_quoted(
     'CHASSIS_OBJPATH', get_option('chassis-objpath'))
+conf.set_quoted(
+    'CUSTOM_OBJPATH', get_option('configurable-state-manager-objpath'))
 conf.set_quoted(
     'BMC_BUSNAME', get_option('bmc-busname'))
 conf.set_quoted(
@@ -93,6 +97,17 @@ executable('phosphor-hypervisor-state-manager',
             'hypervisor_state_manager.cpp',
             'hypervisor_state_manager_main.cpp',
             'settings.cpp',
+            dependencies: [
+            sdbusplus, sdeventplus, phosphorlogging,
+            phosphordbusinterfaces, cppfs
+            ],
+    implicit_include_directories: true,
+    install: true
+)
+
+executable('configurable-state-manager',
+            'configurable_state_manager_main.cpp',
+            'utils.cpp',
             dependencies: [
             sdbusplus, sdeventplus, phosphorlogging,
             phosphordbusinterfaces, cppfs

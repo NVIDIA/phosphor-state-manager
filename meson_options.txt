@@ -25,6 +25,18 @@ option(
 )
 
 option(
+    'configurable-state-manager-busname', type: 'string',
+    value: 'xyz.openbmc_project.State.ConfigurableStateManager',
+    description: 'The Nvidia State Manager DBus busname to own.',
+)
+
+option(
+    'configurable-state-manager-objpath', type: 'string',
+    value: '/xyz/openbmc_project/state/configurableStateManager',
+    description: 'The Nvidia State Manager Dbus root.',
+)
+
+option(
     'chassis-busname', type: 'string',
     value: 'xyz.openbmc_project.State.Chassis',
     description: 'The Chassis DBus busname to own.',
