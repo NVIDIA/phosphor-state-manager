@@ -121,6 +121,27 @@ class Host : public HostInherit
                     RebootAttempts::attemptsLeft(BOOT_COUNT_MAX_ALLOWED));
     }
 
+#ifdef MOONRAKER_OEM_BOOT_PROGRESS
+ /** @brief override to support moonraker OEM boot state */
+    virtual ProgressStages bootProgress() const override
+    {
+        return ProgressStages::OEM;
+    }
+
+    virtual std::string bootProgressOem() const override
+    {
+        auto method = bus.new_method_call("xyz.openbmc_project.Settings.connectx", "/xyz/openbmc_project/network/connectx/smartnic_os_state/os_state",
+                                          "org.freedesktop.DBus.Properties", "Get");
+        method.append("xyz.openbmc_project.Control.SmartNicOsState", "SmartNicOsState");
+
+        auto response = bus.call(method);
+
+        std::variant<std::string> bootProgress;
+        response.read(bootProgress);
+        auto ret  = std::get<std::string>(bootProgress);
+        return ret.substr(sizeof("xyz.openbmc_project.Control.SmartNicOsState.Mode."));
+    }
+#endif
   private:
     /**
      * @brief subscribe to the systemd signals

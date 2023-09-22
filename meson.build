@@ -64,6 +64,10 @@ if(get_option('warm-reboot').enabled())
     add_project_arguments('-DENABLE_WARM_REBOOT',language:'cpp')
 endif
 
+if(get_option('moonraker-oem-boot-progress').enabled())
+    add_project_arguments('-DMOONRAKER_OEM_BOOT_PROGRESS',language:'cpp')
+endif
+
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')
 phosphorlogging = dependency('phosphor-logging')

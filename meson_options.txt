@@ -110,3 +110,7 @@ option('host-gpios-objpath', type : 'string',
     description : 'The host gpios Dbus root.',
 )
 
+option('moonraker-oem-boot-progress', type : 'feature',
+    value : 'disabled',
+    description : 'Enable moonraker oem os state',
+)
