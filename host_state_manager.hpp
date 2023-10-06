@@ -94,6 +94,9 @@ class Host : public HostInherit
     /** @brief Set value of CurrentHostState */
     HostState currentHostState(HostState value) override;
 
+    /** @brief Set Value for boot progress last update time */
+    uint64_t bootProgressLastUpdate(uint64_t value) override;
+
     /**
      * @brief Set host reboot count to default
      *
@@ -218,7 +221,9 @@ class Host : public HostInherit
                                       server::Progress::bootProgress()),
                 convertForMessage(
                     sdbusplus::xyz::openbmc_project::State::OperatingSystem::
-                        server::Status::operatingSystemState()));
+                        server::Status::operatingSystemState()),
+                sdbusplus::xyz::openbmc_project::State::Boot::
+                    server::Progress::bootProgressLastUpdate());
     }
 
     /** @brief Function required by Cereal to perform deserialization.
@@ -236,7 +241,8 @@ class Host : public HostInherit
         std::string reqTranState;
         std::string bootProgress;
         std::string osState;
-        archive(reqTranState, bootProgress, osState);
+        uint64_t bootProgressLastUpdate;
+        archive(reqTranState, bootProgress, osState, bootProgressLastUpdate);
         auto reqTran = Host::convertTransitionFromString(reqTranState);
         // When restoring, set the requested state with persistent value
         // but don't call the override which would execute it
@@ -247,6 +253,8 @@ class Host : public HostInherit
         sdbusplus::xyz::openbmc_project::State::OperatingSystem::server::
             Status::operatingSystemState(
                 Host::convertOSStatusFromString(osState));
+        sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
+            bootProgressLastUpdate(bootProgressLastUpdate);
     }
 
     /** @brief Serialize and persist requested host state
