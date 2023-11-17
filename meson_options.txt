@@ -37,6 +37,12 @@ option(
 )
 
 option(
+    'configurable-state-manager-filepath', type: 'string',
+    value: '/usr/share/configurable-state-manager',
+    description: 'The Nvidia State Manager file path where jsons exists.',
+)
+
+option(
     'chassis-busname', type: 'string',
     value: 'xyz.openbmc_project.State.Chassis',
     description: 'The Chassis DBus busname to own.',

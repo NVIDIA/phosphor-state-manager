@@ -32,7 +32,7 @@ Till now there was no single service dedicated for state management in OpenBmc. 
 ## Background and References
 There are states hosted by different services (e.g HMCReady by GpuMgr) mostly with OperationalStatus Dbus api. There is no single framework present which we can leverage and makes its easy to host state machine with well defined Dbus API's across categories.
 
-So new service Configurable state manager was proposed which will be a centre point for hosting different state machines across various categories with well defined Dbus API's for each category. It will act as a manager responsible for handling all types of state machines.
+So new service Configurable state manager was proposed which will be a centre point for hosting different state machines across various categories with well defined Dbus API's for each category. It will act as a manager responsible for handling all types of state machines. This service is data driven and makes it easy to enable new state machines through simple json definitions.
 
 For details about OpenBmc State Management - refer [1]
 For details about Vulcan Power Handling, HMC Readiness, Sub services (GpuMgr,  Sensor server etc) handling through Configurable State Manager - refer [2]  
@@ -51,9 +51,10 @@ For details about Vulcan Power Handling, HMC Readiness, Sub services (GpuMgr,  S
 ## Proposed Design
 - Creating a new configurable state manager (csm) will be a single thread service based on phosphor-dbus-interface library. 
 - Start/Stop of configurable state manager service is managed by systemd. Service name is "xyz.openbmc_project.State.ConfigurableStateManager"
-- csm service is packed with Phosphor state manager.
+- csm service is packaged with Phosphor state manager.
 - Transition of states will be through a data driven approach using json files.
 - Each json file will correspond to a particular use case for which we want to report states. Json will contain all information about category type, object name to be created, default state, transition logic etc. We will discuss json structure in detail in later part of doc.
+- Parsing of json will be ordered.
 - Provide the framework for state management. Creating a new state machine for a particular use case should be as easy as adding a new json file.
 
 ### Categories Defined for state management
@@ -195,7 +196,6 @@ All the json files are present under path **"/usr/share/configurable-state-manag
     "State": {
         "State_property": "State",
         "Default": "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline",
-        "ConditionsFallback": "xyz.openbmc_project.State.FeatureReady.States.Starting",
         "States": {
             "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline": {
                 "Conditions": {
@@ -260,9 +260,6 @@ All the json files are present under path **"/usr/share/configurable-state-manag
 
 **Default -** this key will pass the value of state that will be set at the time startup of the service for that interface. The property name in "State_property" field will be set to this default value. So for use case in interface - **"xyz.openbmc_project.State.FeatureReady"** the **State" property will be set to this default value. Default value will be one of the values in enumerations defined in PDI for "State" property. 
 > **ex:** "Default": "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline"
-
-**ConditionsFallback -** this key will pass the value when no conditons evaluates to true in transition conditions. Its kind of worst case handling.
-> **ex:** "ConditionsFallback": "xyz.openbmc_project.State.FeatureReady.States.Starting"
 
 **States -**   It is a map of {value of "State_Property : conditions to be met} . Basically it is the enumerations on all values with its conditions.
 Whenever conditions are true that particular value is set.
@@ -381,7 +378,6 @@ On similar lines we have ChassisPower.json
     "State":{
         "State_property": "CurrentPowerState",
         "Default": "xyz.openbmc_project.State.Chassis.PowerState.Off",
-        "ConditionsFallback": "xyz.openbmc_project.State.Chassis.PowerState.On",
         "States":{
             "xyz.openbmc_project.State.Chassis.PowerState.On": {
                 "Conditions" : {
@@ -403,6 +399,9 @@ On similar lines we have ChassisPower.json
     }
 }
 ```
+
+In above json file chassisPower.json, the fields present as keys are all mandatory fields, they must be present otherwise we will get error.
+Consider this json as a basic template to be implemented.
 
 ## Flowchart of CSM
 ```
@@ -492,10 +491,10 @@ On similar lines we have ChassisPower.json
          ┌────────────────────┴─────────────────────────────────────────────────────────────┐
          │                        Configurable State Manager                                │
          │ ┌──────────────┐                                          ┌───────────────┐      │
-         │ │ ChassisPower │____________________<<____________________│ TelemetryReady|      │
-         │ |              |____________________>>____________________|               |      |
-         | └──────────────┘   (PropertyChange and InterfaceAdded     └───────────────┘      │
-         │                     dbus signals)                                                │
+         │ │ ChassisPower │                                          │ TelemetryReady|      │
+         │ |              |                                          |               |      |
+         | └──────────────┘                                          └───────────────┘      │
+         │                                                                                  │
          └──────────────────────────────────────────────────────────────────────────────────┘
 (Property  │  ▲          │  ▲ (InterfaceAdded           (Property    │  ▲             │  ▲ (InterfaceAdded
 change dbus▼  │          ▼  │  dbus signal)             change dbus  ▼  │             ▼  │  dbus signal)
@@ -504,9 +503,43 @@ signal)  ┌────┴──────────────┐        
          └───────────────────┘                                   └──────────────────────┘
 ```
 
+
+
+## UML diagram for Category Feature Ready . On similar lines it is defined for other categories  
+```
+
++---------------------------------------+
+|          StateMachineHandler          |                                                            
++---------------------------------------+                                                             
+| - interfaceName: std::string          |
+| - featureType: std::string            |
+| - servicesToBeMonitored: std::unor..  |
+| - stateProperty: std::string          |
+| - defaultState: std::string           |
+|                                       |-----------------------------------------
+| - objPathCreated: std::string         |                                        |         
+| - states: std::vector<State>          |                                        |
+| - eventHandlerMatcher: std::vector< >>|                                        |
++---------------------------------------+                                        |       +-------------------------------------------+
+| + executeTransition(): void           |                                        |       |    CategoryFeatureReady                   |
+| + any(const std::vector<bool>&): bool |                                        |------>+-------------------------------------------+
+| + all(const std::vector<bool>&): bool |                                        |       |                                           |
+| + setPropertyValue(...)               |                                        |       | + getPropertyValue(...):PropertiesVariant |
++---------------------------------------+                                        |       | + setPropertyValue(...): void             |
+                                                                                 |       |                                           |
+          +-----------------------+                                              |       +-------------------------------------------+
+          | FeatureIntfInherit    |-----------------------------------------------
+          +-----------------------+
+          | PDI interface class   |
+          +-----------------------+
+
+```
 ### Special scenarios Handled
 - If any json file is corrupt it will throw runtime error.
-- To handle dependency between different object paths in csm, we first sort the json filenames and then start parsing the json file. Like in the TelemetryReadiness use case Telmetry object has dependency chassisPower object. This is handled because chassisPower object has file name ChassisPower.json which will be processed before telemtry object which has file name Telemetry.json.
+- - Parsing of json will be ordered.
+- In case of any error we report state as Unknown state .
+- In case where dependency is on the property reported by csm service itself we need to make changes in csm code also. We need to populate local cache for objectPath and propertyname combination. It is required because getProperty/SetProperty on same service throws error due to deadlock in sdbus call. So local cache need to be maintained. e.g. TelemetryReadiness object has dependency on currentPowerState on PowerChassis object inside same service csm.
+- To handle dependency between different object paths in csm, we first sort the json filenames and then start parsing the json file. Like in the TelemetryReadiness use case Telmetry object has dependency on chassisPower object. This is handled because chassisPower object has file name ChassisPower.json which will be processed before telemtry object which has file name Telemetry.json.
 - If any error comes in fetching values for a particular json, it logs error and move to processing of other json.
 - In executeTransition() we loop over state values with its conditions, if we get error while evaluating one state value, will log error for it and move to next state evaluation.
 

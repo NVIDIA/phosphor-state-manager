@@ -16,7 +16,6 @@
 #include <boost/format.hpp>
 #include "utils.hpp"
 
-using json = nlohmann::json;
 namespace fs = std::filesystem;
 using namespace phosphor::logging;
 
@@ -50,13 +49,8 @@ void StateMachineHandler::executeTransition()
     for (const State& stateValueTransition : states)  
     {
         std::string stateValue = stateValueTransition.name;
-        //const State& stateValueTransition = stateEntry.second;
         std::string stateValueLogic = stateValueTransition.logic;
         std::vector<bool> evalConditions;
-
-        // booolean variable indicating to jump to next iteration
-        // state evaluation
-        bool jumpToNextState = false;
 
         // Process conditions to be met to attain the state
         for (const Condition& condition : stateValueTransition.conditions) 
@@ -69,9 +63,26 @@ void StateMachineHandler::executeTransition()
                 phosphor::state::manager::utils::PropertyValue tmp;
                 try
                 {
-                    if(objectPath.find("ChassisPower") != std::string::npos)
+                    // find the service name containing object, intf
+                    std::string service = phosphor::state::manager::utils::getService(bus, objectPath, condition.intf);
+                
+                    // if service is empty set unknown state and return
+                    if (service.empty())
                     {
-                        tmp = chassisCurrentPowerState;
+                        log<level::ERR>("Unable to fetch service name");
+                        setPropertyValue(stateProperty, errorState);
+                        return;
+                    }
+
+                    auto errStrPatht = (boost::format("service name fetched::%s ") % service ).str();
+                    log<level::ERR>(errStrPatht.c_str());
+                    // if the service hosting the object is csm
+                    // look in local cache
+                    if(service.find("ConfigurableStateManager") != std::string::npos)
+                    {
+                        // if property hosted on same service use local cache
+                        // this is kind of local get operation
+                        tmp = localCache[objectPath];
                     }
                     else
                     {
@@ -80,14 +91,13 @@ void StateMachineHandler::executeTransition()
                 }
                 catch(const std::exception& e)
                 {
-                    auto errStrPath = (boost::format("Got error with getProperty() for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s. \n Skipping present state evaluation and moving to next state evaluation.") % objectPath % condition.intf % condition.property % e.what()).str();
+                    auto errStrPath = (boost::format("Got error with getProperty() for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s. ") % objectPath % condition.intf % condition.property % e.what()).str();
                     log<level::ERR>(errStrPath.c_str());
 
-                    //when error occurs we do not throw runtime error
-                    //log the error and try to evaulate next state evaluation
-                    //so jumping to next iteration of outermost loop.
-                    jumpToNextState = true;
-                    break;
+                    // set the fallback condition as we are getting error while
+                    // evaluating condition
+                    setPropertyValue(stateProperty, errorState);
+                    return;
                 }
 
                 std::string reqValue;
@@ -97,11 +107,6 @@ void StateMachineHandler::executeTransition()
                     int intValue = std::get<int>(tmp);
                     reqValue = std::to_string(intValue);
                 } 
-                /*else if (std::holds_alternative<double>(tmp)) 
-                {
-                    double doubleValue = std::get<double>(tmp);
-                    reqValue = std::to_string(doubleValue);
-                } */
                 else if (std::holds_alternative<std::string>(tmp)) 
                 {
                     reqValue = std::get<std::string>(tmp);
@@ -111,18 +116,13 @@ void StateMachineHandler::executeTransition()
                     bool boolValue = std::get<bool>(tmp);
                     reqValue = boolValue ? "true" : "false";
                 } 
-                /*else if (std::holds_alternative<const char*>(tmp)) 
-                {
-                    const char* charPtrValue = std::get<const char*>(tmp);
-                    reqValue = charPtrValue;
-                } */
                 else 
                 {
                     reqValue = "Unsupported Type";
                 }
                 
                 int res = condition.value.compare(reqValue);
-	            if (res == 0)
+                if (res == 0)
                 {
 	            	evalConditionLoop.push_back(true);
                 }
@@ -130,11 +130,6 @@ void StateMachineHandler::executeTransition()
                 {
 	            	evalConditionLoop.push_back(false);
                 }
-            }
-
-            if (jumpToNextState)
-            {
-                break;
             }
 
             if (condition.logic.compare("AND") == 0)
@@ -145,17 +140,19 @@ void StateMachineHandler::executeTransition()
             {
                 evalConditions.push_back(any(evalConditionLoop));
             }
-            else
+            else if(condition.logic.empty())
             {
                 // if no logic is present means only single entry
                 evalConditions.push_back(evalConditionLoop[0]);
             }
-        }
-
-        if (jumpToNextState)
-        {
-            jumpToNextState = false;
-            continue;
+            else
+            {
+                //other cases of not supported logics
+                log<level::ERR>("Unsupported logic gate used");
+                //set state to unknown as feature evaluation got error
+                setPropertyValue(stateProperty, errorState);
+                return;
+            }
         }
 
         // final evaluation of all condition boolean results for a particular state value
@@ -168,25 +165,25 @@ void StateMachineHandler::executeTransition()
         {
             stateConditionsResult = any(evalConditions);
         }
-        else
+        else if(stateValueTransition.logic.empty())
         {
             // if no logic is present means only one condition was there
             stateConditionsResult = evalConditions[0];
+        }
+        else
+        {
+            //other cases of not supported logics
+            log<level::ERR>("Unsupported logic gate used");
+            return;
         }
 
         // if evaluation is true we set the property and return
         if(stateConditionsResult)
         {
             setPropertyValue(stateProperty, stateValue);
-            if(stateValue.find("xyz.openbmc_project.State.Chassis.PowerState") != std::string::npos)
-            {
-                chassisCurrentPowerState = stateValue;
-            }
             return;
         }
     }
-    log<level::ERR>("if we reach here means state evaluation of not a single state value was true, this may happened either json file is corrupted or some interfaces are not available which we are monitoring, -- Setting value with ConditionsFallback value --");
-    setPropertyValue(stateProperty, conditionsFallbackState);
 }
 
 /** @brief Parsing JSON file  */
@@ -200,8 +197,6 @@ Json ConfigurableStateManager::parseConfigFile(const std::string& configFile)
         errhandler_json_file.close();
         log<level::ERR>("Json  file  not found!",
                         entry("FILE_NAME=%s", configFile.c_str()));
-        //throw std::runtime_error("Config failed");
-        isFileGood = false;
         return data;
     }
 
@@ -210,8 +205,7 @@ Json ConfigurableStateManager::parseConfigFile(const std::string& configFile)
     {
         log<level::ERR>("Corrupted Json file",
                         entry("FILE_NAME=%s", configFile.c_str()));
-        //throw std::runtime_error("Config failed");
-        isFileGood = false;
+        return data;
     }
     return data;
 }
@@ -236,7 +230,7 @@ int main()
     conn->request_name(CUSTOM_BUSNAME);
 
     // Folder path to JSON files
-    std::string folderPath = "/usr/share/configurable-state-manager";
+    std::string folderPath = std::string{CUSTOM_FILEPATH};
     std::vector<std::string> jsonFiles;
     for (const auto& filePath : fs::directory_iterator(folderPath)) 
     {
@@ -253,9 +247,8 @@ int main()
     for (const auto& jsonFilePath : jsonFiles) 
     {
         const std::string& configFile = jsonFilePath;
-        isFileGood = true;
-        json data = manager.parseConfigFile(configFile);
-        if(!isFileGood)
+        Json data = manager.parseConfigFile(configFile);
+        if(data.is_null() || data.is_discarded())
         {
             continue;
         }
@@ -273,22 +266,24 @@ int main()
             // Find the last occurrence of '.'
             size_t lastDotPos = featureType.rfind('.');
             
+            std::string extractedString;
             // Check if a dot was found
             if (lastDotPos != std::string::npos) 
             {
                 // Extract the substring after the last dot
-                std::string extractedString = featureType.substr(lastDotPos+ 1);
-                objToBeAdded = objToBeAdded + extractedString;
+                extractedString = featureType.substr(lastDotPos+ 1);
             }
             else
             {
-                objToBeAdded = objToBeAdded + featureType;
+                extractedString = featureType;
             }
+            objToBeAdded = objToBeAdded + extractedString;
+            
             std::unordered_map<std::string,        
-             std::vector<std::string>>servicesToBeMonitored = data      ["ServicesToBeMonitored"];
+            std::vector<std::string>>servicesToBeMonitored = data["ServicesToBeMonitored"];
             std::string stateProperty = data["State"]["State_property"];
             std::string defaultState = data["State"]["Default"];
-            std::string conditionsFallbackState = data["State"]["ConditionsFallback"];
+            std::string errorState = "";
             
             std::vector<configurable_state_manager::State> states;
             // Extract states from JSON
@@ -309,31 +304,37 @@ int main()
                     condition.property = conditionEntry.value()["Property"];
                     condition.value = conditionEntry.value()["Value"];
                     // optional field
-                    condition.logic = conditionEntry.value().value("Logic","");
+                    condition.logic = conditionEntry.value().value("Logic", "");
                     state.conditions.push_back(condition);
                 }
                 // Add the state to the states vector
                 states.push_back(state);
             }
+
             if (interfaceName.find("FeatureReady") != std::string::npos) 
             {
-                manager.featureEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryFeatureReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, conditionsFallbackState, states)));
+                errorState = "xyz.openbmc_project.State.FeatureReady.States.Unknown";
+                manager.featureEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryFeatureReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, errorState, states)));
             }
             else if (interfaceName.find("DeviceReady") != std::string::npos)
             {
-                manager.deviceEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryDeviceReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, conditionsFallbackState, states)));
+                errorState = "xyz.openbmc_project.State.DeviceReady.States.Unknown";
+                manager.deviceEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryDeviceReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, errorState, states)));
             }
             else if (interfaceName.find("InterfaceReady") !=std::string::npos)
             {
-                manager.interfaceEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryInterfaceReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, conditionsFallbackState, states)));
+                errorState = "xyz.openbmc_project.State.InterfaceReady.States.Unknown";
+                manager.interfaceEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryInterfaceReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, errorState, states)));
             }
             else if (interfaceName.find("ServiceReady") !=std::string::npos)
             {
-                manager.serviceEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryServiceReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, conditionsFallbackState, states)));
+                errorState = "xyz.openbmc_project.State.ServiceReady.States.Unknown";
+                manager.serviceEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryServiceReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, errorState, states)));
             }
             else if (interfaceName.find("State.Chassis") !=std::string::npos)
             {
-                manager.powerEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryChassisPowerReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, conditionsFallbackState, states)));
+                errorState = "xyz.openbmc_project.State.Chassis.PowerState.Unknown";
+                manager.powerEntities.push_back(std::move(std::make_unique<configurable_state_manager::CategoryChassisPowerReady>(*conn, objToBeAdded.c_str(), interfaceName,featureType, servicesToBeMonitored, stateProperty,defaultState, errorState, states)));
             }
         }
         catch (std::exception& e)

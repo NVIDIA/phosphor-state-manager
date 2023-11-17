@@ -16,14 +16,17 @@
 #include <iostream>
 #include <variant>
 using namespace phosphor::logging;
+using Json = nlohmann::ordered_json;
 
-static std::string chassisCurrentPowerState;
-static bool isFileGood = true;
+//in case of local dependency for get/set on property use this cache
+//to be used because get/set on same service gives deadlock
+// local cache containg objectPath, propertyName combination
+static std::unordered_map<std::string, std::string> localCache = {
+    {"/xyz/openbmc_project/state/configurableStateManager/ChassisPower", "Unknown"}
+};
 
 namespace configurable_state_manager
 {
-
-using Json = nlohmann::json;
 using FeatureIntfInherit = sdbusplus::server::object::object<
     sdbusplus::xyz::openbmc_project::State::server::FeatureReady>;
 using DeviceIntfInherit = sdbusplus::server::object::object<
@@ -76,7 +79,7 @@ class StateMachineHandler {
     std::unordered_map<std::string, std::vector<std::string>> servicesToBeMonitored;
     std::string stateProperty;
     std::string defaultState;
-    std::string conditionsFallbackState;
+    std::string errorState;
     std::string objPathCreated;
     std::vector<State> states;
     // Constructor that takes the JSON configuration as input
@@ -85,7 +88,7 @@ class StateMachineHandler {
                  const std::unordered_map<std::string, std::vector<std::string>>& servicesToBeMonitored,
                  const std::string& stateProperty,
                  const std::string& defaultState,
-                 const std::string& conditionsFallbackState,
+                 const std::string& errorState,
                  const char* objPathCreated,
                  const std::vector<State>& states) :
         interfaceName(interfaceName),
@@ -93,7 +96,7 @@ class StateMachineHandler {
         servicesToBeMonitored(servicesToBeMonitored),
         stateProperty(stateProperty),
         defaultState(defaultState),
-        conditionsFallbackState(conditionsFallbackState),
+        errorState(errorState),
         objPathCreated(objPathCreated),
         states(states) 
     {}
@@ -136,10 +139,10 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                  const std::unordered_map<std::string, std::vector<std::string>>& servicesToBeMonitored,
                  const std::string& stateProperty,
                  const std::string& defaultState,
-                 const std::string& conditionsFallbackState,
+                 const std::string& errorState,
                  const std::vector<State>& states) :
         FeatureIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, conditionsFallbackState, objPath, states)
+        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, errorState, objPath, states)
     {
         //populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -256,10 +259,10 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                  const std::unordered_map<std::string, std::vector<std::string>>& servicesToBeMonitored,
                  const std::string& stateProperty,
                  const std::string& defaultState,
-                 const std::string& conditionsFallbackState,
+                 const std::string& errorState,
                  const std::vector<State>& states) :
         ServiceIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, conditionsFallbackState, objPath, states)
+        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, errorState, objPath, states)
     {
         //populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -376,10 +379,10 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                  const std::unordered_map<std::string, std::vector<std::string>>& servicesToBeMonitored,
                  const std::string& stateProperty,
                  const std::string& defaultState,
-                 const std::string& conditionsFallbackState,
+                 const std::string& errorState,
                  const std::vector<State>& states) :
         InterfaceIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, conditionsFallbackState, objPath, states)
+        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, errorState, objPath, states)
     {
         //populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -496,10 +499,10 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                  const std::unordered_map<std::string, std::vector<std::string>>& servicesToBeMonitored,
                  const std::string& stateProperty,
                  const std::string& defaultState,
-                 const std::string& conditionsFallbackState,
+                 const std::string& errorState,
                  const std::vector<State>& states) :
         DeviceIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, conditionsFallbackState, objPath, states)
+        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, errorState, objPath, states)
     {
         //populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -601,6 +604,8 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                             const std::string& val)
     {
         setPropertyByName(stateProperty, getPropertyValue(val));
+        // update local cache also
+        localCache[this->objPathCreated] = val;
     }
 
     CategoryChassisPowerReady(sdbusplus::bus_t& bus, const char* objPath,
@@ -609,14 +614,13 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                  const std::unordered_map<std::string, std::vector<std::string>>& servicesToBeMonitored,
                  const std::string& stateProperty,
                  const std::string& defaultState,
-                 const std::string& conditionsFallbackState,
+                 const std::string& errorState,
                  const std::vector<State>& states) :
         ChassisIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, conditionsFallbackState, objPath, states)
+        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored, stateProperty, defaultState, errorState, objPath, states)
     {
         //populate default value of state
         setPropertyValue(stateProperty, defaultState);
-        chassisCurrentPowerState = defaultState;
         
         try
         {

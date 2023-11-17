@@ -31,6 +31,8 @@ conf.set_quoted(
 conf.set_quoted(
     'CUSTOM_OBJPATH', get_option('configurable-state-manager-objpath'))
 conf.set_quoted(
+    'CUSTOM_FILEPATH', get_option('configurable-state-manager-filepath'))
+conf.set_quoted(
     'BMC_BUSNAME', get_option('bmc-busname'))
 conf.set_quoted(
     'BMC_OBJPATH', get_option('bmc-objpath'))
