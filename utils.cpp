@@ -26,17 +26,36 @@ constexpr auto MAPPER_PATH = "/xyz/openbmc_project/object_mapper";
 constexpr auto MAPPER_INTERFACE = "xyz.openbmc_project.ObjectMapper";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
-std::string getService(sdbusplus::bus_t& bus, std::string path,
+// Get the property value 
+PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& objectPath, const std::string& interface, const std::string& propertyName) 
+{
+    static auto newBus = sdbusplus::bus::new_default();
+    PropertyValue value{};
+
+    auto service = getService(bus, objectPath, interface);
+    
+    if (service.empty())
+    {
+        return value;
+    }
+    
+    auto method = newBus.new_method_call(service.c_str(), objectPath.c_str(),
+                                      PROPERTY_INTERFACE, "Get");
+    method.append(interface, propertyName);
+    auto reply = newBus.call(method);
+    reply.read(value);
+    return value;
+}
+
+// get the property name
+std::string getService(sdbusplus::bus::bus& bus, std::string path,
                        std::string interface)
 {
     auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
                                       MAPPER_INTERFACE, "GetObject");
-
     mapper.append(path, std::vector<std::string>({interface}));
-
     std::vector<std::pair<std::string, std::vector<std::string>>>
         mapperResponse;
-
     try
     {
         auto mapperResponseMsg = bus.call(mapper);
@@ -61,6 +80,7 @@ std::string getService(sdbusplus::bus_t& bus, std::string path,
     return mapperResponse.begin()->first;
 }
 
+//get property value with string return type
 std::string getProperty(sdbusplus::bus_t& bus, const std::string& path,
                         const std::string& interface,
                         const std::string& propertyName)
@@ -101,10 +121,8 @@ void setProperty(sdbusplus::bus_t& bus, const std::string& path,
 {
     std::variant<std::string> variantValue = value;
     std::string service = getService(bus, path, interface);
-
     auto method = bus.new_method_call(service.c_str(), path.c_str(),
                                       PROPERTY_INTERFACE, "Set");
-
     method.append(interface, property, variantValue);
     bus.call_noreply(method);
 

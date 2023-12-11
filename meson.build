@@ -26,7 +26,13 @@ conf.set_quoted(
 conf.set_quoted(
     'CHASSIS_BUSNAME', get_option('chassis-busname'))
 conf.set_quoted(
+    'CUSTOM_BUSNAME', get_option('configurable-state-manager-busname'))
+conf.set_quoted(
     'CHASSIS_OBJPATH', get_option('chassis-objpath'))
+conf.set_quoted(
+    'CUSTOM_OBJPATH', get_option('configurable-state-manager-objpath'))
+conf.set_quoted(
+    'CUSTOM_FILEPATH', get_option('configurable-state-manager-filepath'))
 conf.set_quoted(
     'BMC_BUSNAME', get_option('bmc-busname'))
 conf.set_quoted(
@@ -76,6 +82,10 @@ configure_file(output: 'config.h', configuration: conf)
 
 if(get_option('warm-reboot').enabled())
     add_project_arguments('-DENABLE_WARM_REBOOT',language:'cpp')
+endif
+
+if(get_option('moonraker-oem-boot-progress').enabled())
+    add_project_arguments('-DMOONRAKER_OEM_BOOT_PROGRESS',language:'cpp')
 endif
 
 sdbusplus = dependency('sdbusplus')
@@ -149,6 +159,17 @@ executable('phosphor-hypervisor-state-manager',
                 phosphorlogging,
                 sdbusplus,
                 sdeventplus,
+            ],
+    implicit_include_directories: true,
+    install: true
+)
+
+executable('configurable-state-manager',
+            'configurable_state_manager_main.cpp',
+            'utils.cpp',
+            dependencies: [
+            sdbusplus, sdeventplus, phosphorlogging,
+            phosphordbusinterfaces,
             ],
     implicit_include_directories: true,
     install: true

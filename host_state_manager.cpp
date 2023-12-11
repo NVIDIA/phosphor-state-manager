@@ -300,6 +300,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message_t& msg)
         this->currentHostState(server::Host::HostState::Off);
         this->bootProgress(bootprogress::Progress::ProgressStages::Unspecified);
         this->operatingSystemState(osstatus::Status::OSStatus::Inactive);
+        this->bootProgressLastUpdate(0);
     }
     else if ((newStateUnit == getTarget(server::Host::HostState::Running)) &&
              (newStateResult == "done") &&
@@ -449,6 +450,13 @@ Host::HostState Host::currentHostState(HostState value)
 {
     info("Change to Host State: {STATE}", "STATE", value);
     return server::Host::currentHostState(value);
+}
+
+uint64_t Host::bootProgressLastUpdate(uint64_t value)
+{
+    auto retVal = bootprogress::Progress::bootProgressLastUpdate(value);
+    serialize();
+    return retVal;
 }
 
 } // namespace manager
