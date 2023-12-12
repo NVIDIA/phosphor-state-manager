@@ -170,6 +170,7 @@ executable('configurable-state-manager',
             dependencies: [
             sdbusplus, sdeventplus, phosphorlogging,
             phosphordbusinterfaces,
+            libgpiod,
             ],
     implicit_include_directories: true,
     install: true
