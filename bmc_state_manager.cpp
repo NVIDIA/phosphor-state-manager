@@ -4,13 +4,11 @@
 #include "xyz/openbmc_project/Common/error.hpp"
 
 #include <gpiod.h>
-#include <sys/sysinfo.h>
 
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
 
-#include <cassert>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -25,7 +23,7 @@ namespace manager
 PHOSPHOR_LOG2_USING;
 
 // When you see server:: you know we're referencing our base class
-namespace server = sdbusplus::xyz::openbmc_project::State::server;
+namespace server = sdbusplus::server::xyz::openbmc_project::state;
 
 using namespace phosphor::logging;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
@@ -112,24 +110,6 @@ void BMC::discoverInitialState()
     {
         info("Setting the BMCState field to BMC_NOTREADY");
         this->currentBMCState(BMCState::NotReady);
-    }
-
-    return;
-}
-
-void BMC::subscribeToSystemdSignals()
-{
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "Subscribe");
-
-    try
-    {
-        this->bus.call(method);
-    }
-    catch (const sdbusplus::exception_t& e)
-    {
-        error("Failed to subscribe to systemd signals: {ERROR}", "ERROR", e);
-        elog<InternalFailure>();
     }
 
     return;
@@ -293,19 +273,23 @@ BMC::RebootCause BMC::lastRebootCause(RebootCause value)
     return server::BMC::lastRebootCause(value);
 }
 
-uint64_t BMC::lastRebootTime() const
+void BMC::updateLastRebootTime()
 {
     using namespace std::chrono;
     struct sysinfo info;
 
     auto rc = sysinfo(&info);
     assert(rc == 0);
-
     // Since uptime is in seconds, also get the current time in seconds.
     auto now = time_point_cast<seconds>(system_clock::now());
-    auto rebootTime = now - seconds(info.uptime);
+    auto rebootTimeTs = now - seconds(info.uptime);
+    rebootTime =
+        duration_cast<milliseconds>(rebootTimeTs.time_since_epoch()).count();
+}
 
-    return duration_cast<milliseconds>(rebootTime.time_since_epoch()).count();
+uint64_t BMC::lastRebootTime() const
+{
+    return rebootTime;
 }
 
 void BMC::discoverLastRebootCause()
@@ -344,15 +328,6 @@ void BMC::discoverLastRebootCause()
             break;
     }
 
-    // If the above code could not detect a reason, check to see
-    // if an AC loss occured.
-    size_t chassisId = 0;
-    if (phosphor::state::manager::utils::checkACLoss(chassisId))
-    {
-        this->lastRebootCause(RebootCause::POR);
-        return;
-    }
-
     // If the above code could not detect a reason, look for a the
     // reset-cause-pinhole gpio to see if it is the reason for the reboot
     auto gpioval =
@@ -368,8 +343,19 @@ void BMC::discoverLastRebootCause()
         const std::string errorMsg = "xyz.openbmc_project.State.PinholeReset";
         phosphor::state::manager::utils::createError(
             this->bus, errorMsg,
-            sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level::
+            sdbusplus::server::xyz::openbmc_project::logging::Entry::Level::
                 Notice);
+        return;
+    }
+
+    // If we still haven't found a reason, see if we lost AC power
+    // Note that a pinhole reset will remove AC power to the chassis
+    // on some systems so we always want to look for the pinhole reset
+    // first as that would be the main reason AC power was lost.
+    size_t chassisId = 0;
+    if (phosphor::state::manager::utils::checkACLoss(chassisId))
+    {
+        this->lastRebootCause(RebootCause::POR);
     }
 
     return;
@@ -390,10 +376,10 @@ void BMC::createRFLogEntry(const std::string& messageId,
              {"REDFISH_MESSAGE_ARGS", messageArgs})}));
     try
     {
-        // A strict timeout for logging service to fail early and ensure 
+        // A strict timeout for logging service to fail early and ensure
         // the original caller does not encounter dbus timeout
         uint64_t timeout_us = 10000000;
-        
+
         this->bus.call_noreply(method, timeout_us);
         // Since we are going for reboot, Logging service needs time before we
         // trigger reboot

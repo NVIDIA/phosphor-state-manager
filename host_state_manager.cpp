@@ -20,6 +20,7 @@
 #include <sdbusplus/server.hpp>
 #include <xyz/openbmc_project/Common/error.hpp>
 #include <xyz/openbmc_project/Control/Power/RestorePolicy/server.hpp>
+#include <xyz/openbmc_project/State/Host/error.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -40,11 +41,11 @@ namespace manager
 PHOSPHOR_LOG2_USING;
 
 // When you see server:: or reboot:: you know we're referencing our base class
-namespace server = sdbusplus::xyz::openbmc_project::State::server;
-namespace reboot = sdbusplus::xyz::openbmc_project::Control::Boot::server;
-namespace bootprogress = sdbusplus::xyz::openbmc_project::State::Boot::server;
+namespace server = sdbusplus::server::xyz::openbmc_project::state;
+namespace reboot = sdbusplus::server::xyz::openbmc_project::control::boot;
+namespace bootprogress = sdbusplus::server::xyz::openbmc_project::state::boot;
 namespace osstatus =
-    sdbusplus::xyz::openbmc_project::State::OperatingSystem::server;
+    sdbusplus::server::xyz::openbmc_project::state::operating_system;
 using namespace phosphor::logging;
 namespace fs = std::filesystem;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
@@ -58,22 +59,6 @@ constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 
 constexpr auto SYSTEMD_PROPERTY_IFACE = "org.freedesktop.DBus.Properties";
 constexpr auto SYSTEMD_INTERFACE_UNIT = "org.freedesktop.systemd1.Unit";
-
-void Host::subscribeToSystemdSignals()
-{
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "Subscribe");
-    try
-    {
-        this->bus.call_noreply(method);
-    }
-    catch (const sdbusplus::exception_t& e)
-    {
-        error("Failed to subscribe to systemd signals: {ERROR}", "ERROR", e);
-        elog<InternalFailure>();
-    }
-    return;
-}
 
 void Host::determineInitialState()
 {
@@ -414,6 +399,16 @@ bool Host::deserialize()
 Host::Transition Host::requestedHostTransition(Transition value)
 {
     info("Host state transition request of {REQ}", "REQ", value);
+
+#if ONLY_ALLOW_BOOT_WHEN_BMC_READY
+    if ((value != Transition::Off) && (!utils::isBmcReady(this->bus)))
+    {
+        info("BMC State is not Ready so no host on operations allowed");
+        throw sdbusplus::xyz::openbmc_project::State::Host::Error::
+            BMCNotReady();
+    }
+#endif
+
     // If this is not a power off request then we need to
     // decrement the reboot counter.  This code should
     // never prevent a power on, it should just decrement

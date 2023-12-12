@@ -14,6 +14,13 @@ namespace utils
 
 using PropertyValue = std::variant<int, std::string,
  bool>;
+/** @brief Tell systemd to generate d-bus events
+ *
+ * @param[in] bus          - The Dbus bus object
+ *
+ * @return void, will throw exception on failure
+ */
+void subscribeToSystemdSignals(sdbusplus::bus_t& bus);
 
 /** @brief Get service name from object path and interface
  *
@@ -68,7 +75,7 @@ int getGpioValue(const std::string& gpioName);
  */
 void createError(
     sdbusplus::bus_t& bus, const std::string& errorMsg,
-    sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level errLevel,
+    sdbusplus::server::xyz::openbmc_project::logging::Entry::Level errLevel,
     std::map<std::string, std::string> additionalData = {});
 
 /** @brief Call phosphor-dump-manager to create BMC user dump
@@ -94,6 +101,18 @@ bool checkACLoss(size_t& chassisId);
  */
 PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& path,
                  const std::string& interface, const std::string& property);
+/** @brief Determine if the BMC is at its Ready state
+ *
+ * @param[in] bus          - The Dbus bus object
+ */
+bool isBmcReady(sdbusplus::bus_t& bus);
+
+/** @brief Wait BMC to enter ready state or timeout reached.
+ *
+ * @param[in] bus          - The Dbus bus object
+ * @param[in] timeout      - Timeout in second
+ */
+bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout);
 
 } // namespace utils
 } // namespace manager

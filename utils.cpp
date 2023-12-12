@@ -8,6 +8,7 @@
 
 #include <phosphor-logging/lg2.hpp>
 
+#include <chrono>
 #include <filesystem>
 
 namespace phosphor
@@ -19,26 +20,32 @@ namespace manager
 namespace utils
 {
 
+using namespace std::literals::chrono_literals;
+
 PHOSPHOR_LOG2_USING;
+
+constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
+constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
+constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 
 constexpr auto MAPPER_BUSNAME = "xyz.openbmc_project.ObjectMapper";
 constexpr auto MAPPER_PATH = "/xyz/openbmc_project/object_mapper";
 constexpr auto MAPPER_INTERFACE = "xyz.openbmc_project.ObjectMapper";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
-// Get the property value 
-PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& objectPath, const std::string& interface, const std::string& propertyName) 
+// Get the property value
+PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& objectPath, const std::string& interface, const std::string& propertyName)
 {
     static auto newBus = sdbusplus::bus::new_default();
     PropertyValue value{};
 
     auto service = getService(bus, objectPath, interface);
-    
+
     if (service.empty())
     {
         return value;
     }
-    
+
     auto method = newBus.new_method_call(service.c_str(), objectPath.c_str(),
                                       PROPERTY_INTERFACE, "Get");
     method.append(interface, propertyName);
@@ -47,8 +54,29 @@ PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& objectP
     return value;
 }
 
-// get the property name
-std::string getService(sdbusplus::bus::bus& bus, std::string path,
+void subscribeToSystemdSignals(sdbusplus::bus_t& bus)
+{
+    auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                      SYSTEMD_INTERFACE, "Subscribe");
+
+    try
+    {
+        // On OpenBMC based systems, systemd has had a few situations where it
+        // has been unable to respond to this call within the default d-bus
+        // timeout of 25 seconds. This is due to the large amount of work being
+        // done by systemd during OpenBMC startup. Set the timeout for this call
+        // to 60 seconds (worst case seen was around 30s so double it).
+        bus.call(method, 60s);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        error("Failed to subscribe to systemd signals: {ERROR}", "ERROR", e);
+        throw std::runtime_error("Unable to subscribe to systemd signals");
+    }
+    return;
+}
+
+std::string getService(sdbusplus::bus_t& bus, std::string path,
                        std::string interface)
 {
     auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
@@ -155,7 +183,7 @@ int getGpioValue(const std::string& gpioName)
 
 void createError(
     sdbusplus::bus_t& bus, const std::string& errorMsg,
-    sdbusplus::xyz::openbmc_project::Logging::server::Entry::Level errLevel,
+    sdbusplus::server::xyz::openbmc_project::logging::Entry::Level errLevel,
     std::map<std::string, std::string> additionalData)
 {
     try
@@ -208,8 +236,8 @@ void createBmcDump(sdbusplus::bus_t& bus)
 
 bool checkACLoss(size_t& chassisId)
 {
-    std::string chassisLostPowerFileFmt =
-        fmt::sprintf(CHASSIS_LOST_POWER_FILE, chassisId);
+    std::string chassisLostPowerFileFmt = fmt::sprintf(CHASSIS_LOST_POWER_FILE,
+                                                       chassisId);
 
     std::filesystem::path chassisPowerLossFile{chassisLostPowerFileFmt};
     if (std::filesystem::exists(chassisPowerLossFile))
@@ -217,6 +245,33 @@ bool checkACLoss(size_t& chassisId)
         return true;
     }
 
+    return false;
+}
+
+bool isBmcReady(sdbusplus::bus_t& bus)
+{
+    auto bmcState = getProperty(bus, "/xyz/openbmc_project/state/bmc0",
+                                "xyz.openbmc_project.State.BMC",
+                                "CurrentBMCState");
+    if (bmcState != "xyz.openbmc_project.State.BMC.BMCState.Ready")
+    {
+        debug("BMC State is {BMC_STATE}", "BMC_STATE", bmcState);
+        return false;
+    }
+    return true;
+}
+
+bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout)
+{
+    while (timeout.count() != 0)
+    {
+        timeout--;
+        if (isBmcReady(bus))
+        {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
     return false;
 }
 

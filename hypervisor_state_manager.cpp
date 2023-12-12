@@ -22,7 +22,7 @@ namespace manager
 PHOSPHOR_LOG2_USING;
 
 // When you see server:: you know we're referencing our base class
-namespace server = sdbusplus::xyz::openbmc_project::State::server;
+namespace server = sdbusplus::server::xyz::openbmc_project::state;
 using namespace phosphor::logging;
 
 server::Host::Transition Hypervisor::requestedHostTransition(Transition value)
@@ -46,11 +46,15 @@ server::Host::Transition Hypervisor::requestedHostTransition(Transition value)
 
 server::Host::HostState Hypervisor::currentHostState(HostState value)
 {
-    info("Change to Hypervisor State: {HYP_STATE}", "HYP_STATE", value);
+    // Only log a message if this has changed since last
+    if (value != server::Host::currentHostState())
+    {
+        info("Change to Hypervisor State: {HYP_STATE}", "HYP_STATE", value);
+    }
     return server::Host::currentHostState(value);
 }
 
-server::Host::HostState Hypervisor::currentHostState()
+server::Host::HostState Hypervisor::currentHostState() const
 {
     return server::Host::currentHostState();
 }
@@ -63,11 +67,6 @@ void Hypervisor::updateCurrentHostState(std::string& bootProgress)
                         "ProgressStages.SystemInitComplete")
     {
         currentHostState(server::Host::HostState::Standby);
-    }
-    else if (bootProgress == "xyz.openbmc_project.State.Boot.Progress."
-                             "ProgressStages.OSStart")
-    {
-        currentHostState(server::Host::HostState::TransitioningToRunning);
     }
     else if (bootProgress == "xyz.openbmc_project.State.Boot.Progress."
                              "ProgressStages.OSRunning")

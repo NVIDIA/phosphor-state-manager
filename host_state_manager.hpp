@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "settings.hpp"
+#include "utils.hpp"
 #include "xyz/openbmc_project/State/Host/server.hpp"
 
 #include <cereal/access.hpp>
@@ -14,7 +15,6 @@
 #include <xyz/openbmc_project/State/OperatingSystem/Status/server.hpp>
 
 #include <filesystem>
-#include <functional>
 #include <string>
 
 namespace phosphor
@@ -25,10 +25,10 @@ namespace manager
 {
 
 using HostInherit = sdbusplus::server::object_t<
-    sdbusplus::xyz::openbmc_project::State::server::Host,
-    sdbusplus::xyz::openbmc_project::State::Boot::server::Progress,
-    sdbusplus::xyz::openbmc_project::Control::Boot::server::RebootAttempts,
-    sdbusplus::xyz::openbmc_project::State::OperatingSystem::server::Status>;
+    sdbusplus::server::xyz::openbmc_project::state::Host,
+    sdbusplus::server::xyz::openbmc_project::state::boot::Progress,
+    sdbusplus::server::xyz::openbmc_project::control::boot::RebootAttempts,
+    sdbusplus::server::xyz::openbmc_project::state::operating_system::Status>;
 
 PHOSPHOR_LOG2_USING;
 
@@ -60,19 +60,17 @@ class Host : public HostInherit
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
                 sdbusRule::path("/org/freedesktop/systemd1") +
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
-            std::bind(std::mem_fn(&Host::sysStateChangeJobRemoved), this,
-                      std::placeholders::_1)),
+            [this](sdbusplus::message_t& m) { sysStateChangeJobRemoved(m); }),
         systemdSignalJobNew(
             bus,
             sdbusRule::type::signal() + sdbusRule::member("JobNew") +
                 sdbusRule::path("/org/freedesktop/systemd1") +
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
-            std::bind(std::mem_fn(&Host::sysStateChangeJobNew), this,
-                      std::placeholders::_1)),
+            [this](sdbusplus::message_t& m) { sysStateChangeJobNew(m); }),
         settings(bus, id), id(id)
     {
         // Enable systemd signals
-        subscribeToSystemdSignals();
+        utils::subscribeToSystemdSignals(bus);
 
         // create map of target name base on host id
         createSystemdTargetMaps();
@@ -81,7 +79,7 @@ class Host : public HostInherit
         determineInitialState();
 
         // Sets auto-reboot attempts to max-allowed
-        attemptsLeft(sdbusplus::xyz::openbmc_project::Control::Boot::server::
+        attemptsLeft(sdbusplus::server::xyz::openbmc_project::control::boot::
                          RebootAttempts::retryAttempts());
 
         // We deferred this until we could get our property correct
@@ -116,16 +114,16 @@ class Host : public HostInherit
      */
     uint32_t retryAttempts(uint32_t value) override
     {
-        if (sdbusplus::xyz::openbmc_project::Control::Boot::server::
+        if (sdbusplus::server::xyz::openbmc_project::control::boot::
                 RebootAttempts::attemptsLeft() != value)
         {
             info("Automatic reboot retry attempts set to: {VALUE} ", "VALUE",
                  value);
-            sdbusplus::xyz::openbmc_project::Control::Boot::server::
+            sdbusplus::server::xyz::openbmc_project::control::boot::
                 RebootAttempts::attemptsLeft(value);
         }
 
-        return (sdbusplus::xyz::openbmc_project::Control::Boot::server::
+        return (sdbusplus::server::xyz::openbmc_project::control::boot::
                     RebootAttempts::retryAttempts(value));
     }
 
@@ -152,7 +150,7 @@ class Host : public HostInherit
         auto retryAttempts = sdbusplus::xyz::openbmc_project::Control::Boot::
             server::RebootAttempts::retryAttempts();
         return (
-            sdbusplus::xyz::openbmc_project::Control::Boot::server::
+            sdbusplus::server::xyz::openbmc_project::control::boot::
                 RebootAttempts::attemptsLeft(std::min(value, retryAttempts)));
     }
 
@@ -178,15 +176,6 @@ class Host : public HostInherit
     }
 #endif
   private:
-    /**
-     * @brief subscribe to the systemd signals
-     *
-     * This object needs to capture when it's systemd targets complete
-     * so it can keep it's state updated
-     *
-     **/
-    void subscribeToSystemdSignals();
-
     /**
      * @brief Determine initial host state and set internally
      *
@@ -276,7 +265,7 @@ class Host : public HostInherit
     {
         // version is not used currently
         (void)(version);
-        archive(sdbusplus::xyz::openbmc_project::Control::Boot::server::
+        archive(sdbusplus::server::xyz::openbmc_project::control::boot::
                     RebootAttempts::retryAttempts(),
                 convertForMessage(sdbusplus::xyz::openbmc_project::State::
                                       server::Host::requestedHostTransition()),
@@ -319,14 +308,14 @@ class Host : public HostInherit
         auto reqTran = Host::convertTransitionFromString(reqTranState);
         // When restoring, set the requested state with persistent value
         // but don't call the override which would execute it
-        sdbusplus::xyz::openbmc_project::State::server::Host::
+        sdbusplus::server::xyz::openbmc_project::state::Host::
             requestedHostTransition(reqTran);
-        sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
+        sdbusplus::server::xyz::openbmc_project::state::boot::Progress::
             bootProgress(Host::convertProgressStagesFromString(bootProgress));
-        sdbusplus::xyz::openbmc_project::State::OperatingSystem::server::
+        sdbusplus::server::xyz::openbmc_project::state::operating_system::
             Status::operatingSystemState(
                 Host::convertOSStatusFromString(osState));
-        sdbusplus::xyz::openbmc_project::Control::Boot::server::RebootAttempts::
+        sdbusplus::server::xyz::openbmc_project::control::boot::RebootAttempts::
             retryAttempts(retryAttempts);
         sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
             bootProgressLastUpdate(bootProgressLastUpdate);

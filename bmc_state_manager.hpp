@@ -1,12 +1,15 @@
 #pragma once
 
+#include "utils.hpp"
 #include "xyz/openbmc_project/State/BMC/server.hpp"
 
 #include <linux/watchdog.h>
+#include <sys/sysinfo.h>
 
 #include <sdbusplus/bus.hpp>
 
-#include <functional>
+#include <cassert>
+#include <chrono>
 
 namespace phosphor
 {
@@ -16,7 +19,7 @@ namespace manager
 {
 
 using BMCInherit = sdbusplus::server::object_t<
-    sdbusplus::xyz::openbmc_project::State::server::BMC>;
+    sdbusplus::server::xyz::openbmc_project::state::BMC>;
 namespace sdbusRule = sdbusplus::bus::match::rules;
 
 /** @class BMC
@@ -40,12 +43,36 @@ class BMC : public BMCInherit
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
                 sdbusRule::path("/org/freedesktop/systemd1") +
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
-            std::bind(std::mem_fn(&BMC::bmcStateChange), this,
-                      std::placeholders::_1)))
+            [this](sdbusplus::message_t& m) { bmcStateChange(m); })),
+
+        timeSyncSignal(std::make_unique<decltype(timeSyncSignal)::element_type>(
+            bus,
+            sdbusRule::propertiesChanged(
+                "/org/freedesktop/systemd1/unit/time_2dsync_2etarget",
+                "org.freedesktop.systemd1.Unit"),
+            [this](sdbusplus::message_t& m) {
+        std::string interface;
+        std::unordered_map<std::string, std::variant<std::string>>
+            propertyChanged;
+        m.read(interface, propertyChanged);
+
+        for (const auto& [key, value] : propertyChanged)
+        {
+            if (key == "ActiveState" &&
+                std::holds_alternative<std::string>(value) &&
+                std::get<std::string>(value) == "active")
+            {
+                updateLastRebootTime();
+                timeSyncSignal.reset();
+            }
+        }
+    }))
     {
-        subscribeToSystemdSignals();
+        utils::subscribeToSystemdSignals(bus);
         discoverInitialState();
         discoverLastRebootCause();
+        updateLastRebootTime();
+
         this->emit_object_added();
     };
 
@@ -78,11 +105,6 @@ class BMC : public BMCInherit
      **/
     void discoverInitialState();
 
-    /**
-     * @brief subscribe to the systemd signals
-     **/
-    void subscribeToSystemdSignals();
-
     /** @brief Execute the transition request
      *
      *  @param[in] tranReq   - Transition requested
@@ -107,19 +129,31 @@ class BMC : public BMCInherit
     /** @brief Used to subscribe to dbus system state changes **/
     std::unique_ptr<sdbusplus::bus::match_t> stateSignal;
 
+    /** @brief Used to subscribe to timesync **/
+    std::unique_ptr<sdbusplus::bus::match_t> timeSyncSignal;
+
     /**
      * @brief discover the last reboot cause of the bmc
      **/
     void discoverLastRebootCause();
 
-    /** @brief Creates a log Entry 
+    /** @brief Creates a log Entry
      *
-     *  @param[in] messageId   - REDFISH_MESSAGE_ID 
+     *  @param[in] messageId   - REDFISH_MESSAGE_ID
      *  @param[in] messageArgs   - REDFISH_MESSAGE_ARGS
      *
      */
     void createRFLogEntry(const std::string& messageId,
                             const std::string& messageArgs);
+    /**
+     * @brief update the last reboot time of the bmc
+     **/
+    void updateLastRebootTime();
+
+    /**
+     * @brief the lastRebootTime calcuated at startup.
+     **/
+    uint64_t rebootTime;
 };
 
 } // namespace manager

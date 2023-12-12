@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include "utils.hpp"
 #include "xyz/openbmc_project/State/Chassis/server.hpp"
 #include "xyz/openbmc_project/State/PowerOnHours/server.hpp"
 
@@ -13,7 +14,6 @@
 
 #include <chrono>
 #include <filesystem>
-#include <functional>
 
 namespace phosphor
 {
@@ -23,8 +23,8 @@ namespace manager
 {
 
 using ChassisInherit = sdbusplus::server::object_t<
-    sdbusplus::xyz::openbmc_project::State::server::Chassis,
-    sdbusplus::xyz::openbmc_project::State::server::PowerOnHours>;
+    sdbusplus::server::xyz::openbmc_project::state::Chassis,
+    sdbusplus::server::xyz::openbmc_project::state::PowerOnHours>;
 namespace sdbusRule = sdbusplus::bus::match::rules;
 namespace fs = std::filesystem;
 
@@ -54,13 +54,13 @@ class Chassis : public ChassisInherit
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
                 sdbusRule::path("/org/freedesktop/systemd1") +
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
-            std::bind(std::mem_fn(&Chassis::sysStateChange), this,
-                      std::placeholders::_1)),
-        id(id), pohTimer(sdeventplus::Event::get_default(),
-                         std::bind(&Chassis::pohCallback, this),
-                         std::chrono::hours{1}, std::chrono::minutes{1})
+            [this](sdbusplus::message_t& m) { sysStateChange(m); }),
+        id(id),
+        pohTimer(
+            sdeventplus::Event::get_default(), [this](auto&) { pohCallback(); },
+            std::chrono::hours{1}, std::chrono::minutes{1})
     {
-        subscribeToSystemdSignals();
+        utils::subscribeToSystemdSignals(bus);
 
         createSystemdTargetTable();
 
@@ -113,15 +113,6 @@ class Chassis : public ChassisInherit
      *  @return True if PSU power is good, false otherwise
      */
     bool determineStatusOfPSUPower();
-
-    /**
-     * @brief subscribe to the systemd signals
-     *
-     * This object needs to capture when it's systemd targets complete
-     * so it can keep it's state updated
-     *
-     **/
-    void subscribeToSystemdSignals();
 
     /** @brief Start the systemd unit requested
      *

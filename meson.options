@@ -13,6 +13,12 @@ option(
 )
 
 option(
+    'host-sched-objpath', type: 'string',
+    value: '/xyz/openbmc_project/scheduled/host',
+    description: 'The scheduled host Dbus root.',
+)
+
+option(
     'hypervisor-busname', type: 'string',
     value: 'xyz.openbmc_project.State.Hypervisor',
     description: 'The Hypervisor DBus busname to own.',
@@ -139,10 +145,26 @@ option('sysfs-abr-image-path', type : 'string',
 )
 
 option('only-run-apr-on-power-loss', type : 'boolean',
-    value : 'false',
+    value : false,
     description : 'Only run automatic restore policy due to loss of AC power.'
 )
+
 option('moonraker-oem-boot-progress', type : 'feature',
     value : 'disabled',
     description : 'Enable moonraker oem os state',
+)
+
+option('sysfs-tpm-device-path', type : 'string',
+    value : '/sys/firmware/devicetree/base/ahb/apb/bus@1e78a000/i2c-bus@680/tpm@2e',
+    description : 'The sysfs path to the tpm device.',
+)
+
+option('sysfs-tpm-measurement-path', type : 'string',
+    value : '/sys/class/tpm/tpm0/pcr-sha256/0',
+    description : 'The sysfs path to the tpm measurement value.',
+)
+
+option('only-allow-boot-when-bmc-ready', type : 'boolean',
+    value : false,
+    description : 'Only allow chassis and host power on operations when BMC is Ready.'
 )

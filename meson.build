@@ -4,9 +4,9 @@ project(
     default_options: [
         'warning_level=3',
         'werror=true',
-        'cpp_std=c++20'
+        'cpp_std=c++23'
     ],
-    meson_version: '>= 0.57.0',
+    meson_version: '>=1.1.1',
     license: 'Apache-2.0',
     version: '0.1',
 )
@@ -19,6 +19,8 @@ conf.set_quoted(
     'HOST_BUSNAME', get_option('host-busname'))
 conf.set_quoted(
     'HOST_OBJPATH', get_option('host-objpath'))
+conf.set_quoted(
+    'HOST_SCHED_OBJPATH', get_option('host-sched-objpath'))
 conf.set_quoted(
     'HYPERVISOR_BUSNAME', get_option('hypervisor-busname'))
 conf.set_quoted(
@@ -55,7 +57,7 @@ conf.set_quoted(
     'SYSFS_SECURE_BOOT_PATH', get_option('sysfs-secure-boot-path'))
 conf.set_quoted(
     'SYSFS_ABR_IMAGE_PATH', get_option('sysfs-abr-image-path'))
-if build_host_gpios.enabled()
+if build_host_gpios.allowed()
     conf.set_quoted(
         'HOST_GPIOS_BUSNAME', get_option('host-gpios-busname'))
     conf.set_quoted(
@@ -64,6 +66,15 @@ endif
 
 conf.set10(
     'ONLY_RUN_APR_ON_POWER_LOSS', get_option('only-run-apr-on-power-loss'))
+
+conf.set_quoted(
+    'SYSFS_TPM_DEVICE_PATH', get_option('sysfs-tpm-device-path'))
+
+conf.set_quoted(
+    'SYSFS_TPM_MEASUREMENT_PATH', get_option('sysfs-tpm-measurement-path'))
+
+conf.set10(
+    'ONLY_ALLOW_BOOT_WHEN_BMC_READY', get_option('only-allow-boot-when-bmc-ready'))
 
 # globals shared across applications
 conf.set_quoted(
@@ -80,7 +91,7 @@ conf.set_quoted(
 
 configure_file(output: 'config.h', configuration: conf)
 
-if(get_option('warm-reboot').enabled())
+if(get_option('warm-reboot').allowed())
     add_project_arguments('-DENABLE_WARM_REBOOT',language:'cpp')
 endif
 
@@ -88,24 +99,13 @@ if(get_option('moonraker-oem-boot-progress').enabled())
     add_project_arguments('-DMOONRAKER_OEM_BOOT_PROGRESS',language:'cpp')
 endif
 
+nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')
 phosphorlogging = dependency('phosphor-logging')
 phosphordbusinterfaces = dependency('phosphor-dbus-interfaces')
 libgpiod = dependency('libgpiod', version : '>=1.4.1')
 fmt = dependency('fmt')
-
-if cpp.has_header('nlohmann/json.hpp')
-    nlohmann_json = declare_dependency()
-else
-    subproject('nlohmann-json')
-    nlohmann_json = declare_dependency(
-        include_directories: [
-            'subprojects/nlohmann-json/single_include',
-            'subprojects/nlohmann-json/single_include/nlohmann',
-        ]
-    )
-endif
 
 if cpp.has_header('CLI/CLI.hpp')
     CLI11 = declare_dependency()
@@ -183,7 +183,7 @@ executable('phosphor-chassis-state-manager',
                 cereal,
                 fmt,
                 libgpiod,
-                nlohmann_json,
+                nlohmann_json_dep,
                 phosphordbusinterfaces,
                 phosphorlogging,
                 sdbusplus,
@@ -247,7 +247,7 @@ executable('phosphor-systemd-target-monitor',
             dependencies: [
                 CLI11,
                 libgpiod,
-                nlohmann_json,
+                nlohmann_json_dep,
                 phosphorlogging,
                 sdbusplus,
                 sdeventplus,
@@ -304,11 +304,11 @@ install_data('scripts/host-reboot',
 
 systemd = dependency('systemd')
 systemd_system_unit_dir = systemd.get_variable(
-    pkgconfig : 'systemdsystemunitdir')
+    'systemdsystemunitdir')
 subdir('service_files')
 subdir('target_files')
 
-if build_host_gpios.enabled()
+if build_host_gpios.allowed()
     subdir('host_condition_gpio')
 endif
 
@@ -332,7 +332,7 @@ gmock = dependency('gmock', disabler: true, required: build_tests)
           'systemd_target_parser.cpp',
           dependencies: [
               gtest,
-              nlohmann_json,
+              nlohmann_json_dep,
           ],
           implicit_include_directories: true,
           include_directories: '../'
@@ -348,7 +348,7 @@ gmock = dependency('gmock', disabler: true, required: build_tests)
           dependencies: [
               gtest,
               libgpiod,
-              nlohmann_json,
+              nlohmann_json_dep,
               phosphorlogging,
               sdbusplus,
               sdeventplus,

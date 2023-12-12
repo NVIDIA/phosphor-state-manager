@@ -6,7 +6,7 @@
 
 #include <gtest/gtest.h>
 
-namespace server = sdbusplus::xyz::openbmc_project::State::server;
+namespace server = sdbusplus::server::xyz::openbmc_project::state;
 
 TEST(updateCurrentHostState, BasicPaths)
 {
@@ -25,12 +25,6 @@ TEST(updateCurrentHostState, BasicPaths)
                    "ProgressStages.SystemInitComplete";
     hypObj.updateCurrentHostState(bootProgress);
     EXPECT_EQ(hypObj.currentHostState(), server::Host::HostState::Standby);
-
-    bootProgress = "xyz.openbmc_project.State.Boot.Progress."
-                   "ProgressStages.OSStart";
-    hypObj.updateCurrentHostState(bootProgress);
-    EXPECT_EQ(hypObj.currentHostState(),
-              server::Host::HostState::TransitioningToRunning);
 
     bootProgress = "xyz.openbmc_project.State.Boot.Progress."
                    "ProgressStages.OSRunning";

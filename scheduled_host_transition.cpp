@@ -22,9 +22,6 @@
 #define TFD_TIMER_CANCEL_ON_SET (1 << 1)
 #endif
 
-// Needed to make sure timerfd does not misfire even though we set CANCEL_ON_SET
-#define TIME_T_MAX (time_t)((1UL << ((sizeof(time_t) << 3) - 1)) - 1)
-
 namespace phosphor
 {
 namespace state
@@ -42,8 +39,8 @@ using namespace xyz::openbmc_project::ScheduledTime;
 using InvalidTimeError =
     sdbusplus::xyz::openbmc_project::ScheduledTime::Error::InvalidTime;
 using HostTransition =
-    sdbusplus::xyz::openbmc_project::State::server::ScheduledHostTransition;
-using HostState = sdbusplus::xyz::openbmc_project::State::server::Host;
+    sdbusplus::server::xyz::openbmc_project::state::ScheduledHostTransition;
+using HostState = sdbusplus::server::xyz::openbmc_project::state::Host;
 
 constexpr auto PROPERTY_TRANSITION = "RequestedHostTransition";
 constexpr auto PROPERTY_RESTART_CAUSE = "RestartCause";
@@ -130,8 +127,8 @@ void ScheduledHostTransition::initialize()
     // Subscribe time change event
     // Choose the MAX time that is possible to avoid mis fires.
     constexpr itimerspec maxTime = {
-        {0, 0},          // it_interval
-        {TIME_T_MAX, 0}, // it_value
+        {0, 0},                                     // it_interval
+        {system_clock::duration::max().count(), 0}, // it_value
     };
 
     // Create and operate on a timer that delivers timer expiration

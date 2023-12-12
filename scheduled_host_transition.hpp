@@ -5,6 +5,7 @@
 #include <sdbusplus/bus.hpp>
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/utility/timer.hpp>
+#include <xyz/openbmc_project/State/Host/server.hpp>
 #include <xyz/openbmc_project/State/ScheduledHostTransition/server.hpp>
 
 class TestScheduledHostTransition;
@@ -17,9 +18,9 @@ namespace manager
 {
 
 using Transition =
-    sdbusplus::xyz::openbmc_project::State::server::Host::Transition;
+    sdbusplus::server::xyz::openbmc_project::state::Host::Transition;
 using ScheduledHostTransitionInherit = sdbusplus::server::object_t<
-    sdbusplus::xyz::openbmc_project::State::server::ScheduledHostTransition>;
+    sdbusplus::server::xyz::openbmc_project::state::ScheduledHostTransition>;
 
 /** @class ScheduledHostTransition
  *  @brief Scheduled host transition implementation.
@@ -34,7 +35,7 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
         ScheduledHostTransitionInherit(
             bus, objPath, ScheduledHostTransition::action::defer_emit),
         bus(bus), id(id), event(event),
-        timer(event, std::bind(&ScheduledHostTransition::callback, this))
+        timer(event, [this](auto&) { callback(); })
     {
         initialize();
 
@@ -106,11 +107,11 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
     /** @brief The deleter of sd_event_source */
     std::function<void(sd_event_source*)> sdEventSourceDeleter =
         [](sd_event_source* p) {
-            if (p)
-            {
-                sd_event_source_unref(p);
-            }
-        };
+        if (p)
+        {
+            sd_event_source_unref(p);
+        }
+    };
 
     using SdEventSource =
         std::unique_ptr<sd_event_source, decltype(sdEventSourceDeleter)>;

@@ -15,9 +15,9 @@ namespace manager
 {
 
 using HypervisorInherit = sdbusplus::server::object_t<
-    sdbusplus::xyz::openbmc_project::State::server::Host>;
+    sdbusplus::server::xyz::openbmc_project::state::Host>;
 
-namespace server = sdbusplus::xyz::openbmc_project::State::server;
+namespace server = sdbusplus::server::xyz::openbmc_project::state;
 namespace sdbusRule = sdbusplus::bus::match::rules;
 
 /** @class Host
@@ -49,8 +49,7 @@ class Hypervisor : public HypervisorInherit
             sdbusRule::propertiesChanged(
                 "/xyz/openbmc_project/state/host0",
                 "xyz.openbmc_project.State.Boot.Progress"),
-            std::bind(std::mem_fn(&Hypervisor::bootProgressChangeEvent), this,
-                      std::placeholders::_1))
+            [this](sdbusplus::message_t& m) { bootProgressChangeEvent(m); })
     {}
 
     /** @brief Set value of HostTransition */
@@ -62,7 +61,7 @@ class Hypervisor : public HypervisorInherit
         currentHostState(server::Host::HostState value) override;
 
     /** @brief Return value of CurrentHostState */
-    server::Host::HostState currentHostState();
+    server::Host::HostState currentHostState() const override;
 
     /** @brief Check if BootProgress change affects hypervisor state
      *

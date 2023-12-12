@@ -8,12 +8,14 @@ Wants=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
 After=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
 Wants=mapper-wait@-xyz-openbmc_project-state-bmc0.service
 After=mapper-wait@-xyz-openbmc_project-state-bmc0.service
-After=op-reset-chassis-on@%i.service
+After=phosphor-reset-chassis-on@%i.service
+Wants=xyz.openbmc_project.Settings.service
+After=xyz.openbmc_project.Settings.service
 ConditionPathExists=!/run/openbmc/chassis@%i-on
 
 [Service]
 Restart=no
-Type=oneshot
+Type=simple
 RemainAfterExit=yes
 ExecStart=/usr/bin/phosphor-discover-system-state --host %i
 

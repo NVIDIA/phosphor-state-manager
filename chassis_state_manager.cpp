@@ -16,6 +16,7 @@
 #include <sdbusplus/exception.hpp>
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/exception.hpp>
+#include <xyz/openbmc_project/State/Chassis/error.hpp>
 #include <xyz/openbmc_project/State/Decorator/PowerSystemInputs/server.hpp>
 
 #include <filesystem>
@@ -31,9 +32,9 @@ namespace manager
 PHOSPHOR_LOG2_USING;
 
 // When you see server:: you know we're referencing our base class
-namespace server = sdbusplus::xyz::openbmc_project::State::server;
+namespace server = sdbusplus::server::xyz::openbmc_project::state;
 namespace decoratorServer =
-    sdbusplus::xyz::openbmc_project::State::Decorator::server;
+    sdbusplus::server::xyz::openbmc_project::state::decorator;
 
 using namespace phosphor::logging;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
@@ -44,8 +45,9 @@ constexpr auto CHASSIS_STATE_POWEROFF_TGT_FMT =
 constexpr auto CHASSIS_STATE_HARD_POWEROFF_TGT_FMT =
     "obmc-chassis-hard-poweroff@{}.target";
 constexpr auto CHASSIS_STATE_POWERON_TGT_FMT = "obmc-chassis-poweron@{}.target";
-constexpr auto RESET_HOST_SENSORS_SVC_FMT =
-    "phosphor-reset-sensor-states@{}.service";
+constexpr auto CHASSIS_BLACKOUT_TGT_FMT = "obmc-chassis-blackout@{}.target";
+constexpr auto CHASSIS_STATE_POWERCYCLE_TGT_FMT =
+    "obmc-chassis-powercycle@{}.target";
 constexpr auto AUTO_POWER_RESTORE_SVC_FMT =
     "phosphor-discover-system-state@{}.service";
 constexpr auto ACTIVE_STATE = "active";
@@ -71,29 +73,14 @@ constexpr auto POWERSYSINPUTS_INTERFACE =
     "xyz.openbmc_project.State.Decorator.PowerSystemInputs";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
-void Chassis::subscribeToSystemdSignals()
-{
-    try
-    {
-        auto method = this->bus.new_method_call(
-            SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH, SYSTEMD_INTERFACE, "Subscribe");
-        this->bus.call(method);
-    }
-    catch (const sdbusplus::exception_t& e)
-    {
-        error("Failed to subscribe to systemd signals: {ERROR}", "ERROR", e);
-        elog<InternalFailure>();
-    }
-
-    return;
-}
-
 void Chassis::createSystemdTargetTable()
 {
     systemdTargetTable = {
         // Use the hard off target to ensure we shutdown immediately
         {Transition::Off, fmt::format(CHASSIS_STATE_HARD_POWEROFF_TGT_FMT, id)},
-        {Transition::On, fmt::format(CHASSIS_STATE_POWERON_TGT_FMT, id)}};
+        {Transition::On, fmt::format(CHASSIS_STATE_POWERON_TGT_FMT, id)},
+        {Transition::PowerCycle,
+         fmt::format(CHASSIS_STATE_POWERCYCLE_TGT_FMT, id)}};
 }
 
 // TODO - Will be rewritten once sdbusplus client bindings are in place
@@ -155,9 +142,8 @@ void Chassis::determineInitialState()
                         "Chassis power was on before the BMC reboot and it is off now");
 
                     // Reset host sensors since system is off now
-                    // TODO: when CHASSIS_BLACKOUT_TGT will include this service
-                    // Needs to be removed when the blackout target is merged
-                    startUnit(fmt::format(RESET_HOST_SENSORS_SVC_FMT, id));
+                    // Ensure Power Leds are off.
+                    startUnit(fmt::format(CHASSIS_BLACKOUT_TGT_FMT, id));
 
                     setStateChangeTime();
                     // Generate file indicating AC loss occurred
@@ -605,6 +591,14 @@ Chassis::Transition Chassis::requestedPowerTransition(Transition value)
 {
     info("Change to Chassis Requested Power State: {REQ_POWER_TRAN}",
          "REQ_POWER_TRAN", value);
+#if ONLY_ALLOW_BOOT_WHEN_BMC_READY
+    if ((value != Transition::Off) && (!utils::isBmcReady(this->bus)))
+    {
+        info("BMC State is not Ready so no chassis on operations allowed");
+        throw sdbusplus::xyz::openbmc_project::State::Chassis::Error::
+            BMCNotReady();
+    }
+#endif
     startUnit(systemdTargetTable.find(value)->second);
     return server::Chassis::requestedPowerTransition(value);
 }

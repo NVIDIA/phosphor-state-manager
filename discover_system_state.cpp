@@ -33,7 +33,7 @@ PHOSPHOR_LOG2_USING;
 
 using namespace phosphor::logging;
 using namespace sdbusplus::xyz::openbmc_project::Common::Error;
-using namespace sdbusplus::xyz::openbmc_project::Control::Power::server;
+using namespace sdbusplus::server::xyz::openbmc_project::control::power;
 
 } // namespace manager
 } // namespace state
@@ -57,8 +57,8 @@ int main(int argc, char** argv)
         {
             case 'h':
                 hostId = std::stoul(optarg);
-                hostPath =
-                    std::string("/xyz/openbmc_project/state/host") + optarg;
+                hostPath = std::string("/xyz/openbmc_project/state/host") +
+                           optarg;
                 break;
             default:
                 break;
@@ -71,7 +71,7 @@ int main(int argc, char** argv)
     HostObjects settings(bus, hostId);
 
     using namespace phosphor::state::manager;
-    namespace server = sdbusplus::xyz::openbmc_project::State::server;
+    namespace server = sdbusplus::server::xyz::openbmc_project::state;
 
     // This application is only run if chassis power is off
 
@@ -124,14 +124,6 @@ int main(int argc, char** argv)
             // one_time is set to None so use the customer setting
             info("One time not set, check user setting of power policy");
 
-#ifdef ONLY_RUN_APR_ON_POWER_LOSS
-            if (!phosphor::state::manager::utils::checkACLoss(hostId))
-            {
-                info(
-                    "Chassis power was not on prior to BMC reboot so do not run any power policy");
-                return 0;
-            }
-#endif
             auto reply = bus.call(methodUserSetting);
             reply.read(result);
             powerPolicy = std::get<std::string>(result);
@@ -174,7 +166,7 @@ int main(int argc, char** argv)
             info(
                 "power_policy=ALWAYS_POWER_ON, powering host on ({DELAY}s delay)",
                 "DELAY", powerRestoreDelaySec.count());
-            std::this_thread::sleep_for(powerRestoreDelayUsec);
+            utils::waitBmcReady(bus, powerRestoreDelaySec);
             phosphor::state::manager::utils::setProperty(
                 bus, hostPath, HOST_BUSNAME, "RestartCause",
                 convertForMessage(
@@ -183,13 +175,24 @@ int main(int argc, char** argv)
                 bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
                 convertForMessage(server::Host::Transition::On));
         }
+        // Always execute power on if AlwaysOn is set, otherwise check config
+        // option (and AC loss status) on whether to execute other policy
+        // settings
+#if ONLY_RUN_APR_ON_POWER_LOSS
+        else if (!phosphor::state::manager::utils::checkACLoss(hostId))
+        {
+            info(
+                "Chassis power was not on prior to BMC reboot so do not run any further power policy");
+            return 0;
+        }
+#endif
         else if (RestorePolicy::Policy::AlwaysOff ==
                  RestorePolicy::convertPolicyFromString(powerPolicy))
         {
             info(
                 "power_policy=ALWAYS_POWER_OFF, set requested state to off ({DELAY}s delay)",
                 "DELAY", powerRestoreDelaySec.count());
-            std::this_thread::sleep_for(powerRestoreDelayUsec);
+            utils::waitBmcReady(bus, powerRestoreDelaySec);
             // Read last requested state and re-request it to execute it
             auto hostReqState = phosphor::state::manager::utils::getProperty(
                 bus, hostPath, HOST_BUSNAME, "RequestedHostTransition");
@@ -206,7 +209,7 @@ int main(int argc, char** argv)
         {
             info("power_policy=RESTORE, restoring last state ({DELAY}s delay)",
                  "DELAY", powerRestoreDelaySec.count());
-            std::this_thread::sleep_for(powerRestoreDelayUsec);
+            utils::waitBmcReady(bus, powerRestoreDelaySec);
             // Read last requested state and re-request it to execute it
             auto hostReqState = phosphor::state::manager::utils::getProperty(
                 bus, hostPath, HOST_BUSNAME, "RequestedHostTransition");
