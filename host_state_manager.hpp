@@ -132,14 +132,14 @@ class Host : public HostInherit
     {
         auto method = bus.new_method_call("xyz.openbmc_project.Settings.connectx", "/xyz/openbmc_project/network/connectx/smartnic_os_state/os_state",
                                           "org.freedesktop.DBus.Properties", "Get");
-        method.append("xyz.openbmc_project.Control.SmartNicOsState", "SmartNicOsState");
+        method.append("xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState", "SmartNicOsState");
 
         auto response = bus.call(method);
 
         std::variant<std::string> bootProgress;
         response.read(bootProgress);
         auto ret  = std::get<std::string>(bootProgress);
-        return ret.substr(sizeof("xyz.openbmc_project.Control.SmartNicOsState.Mode."));
+        return ret.substr(sizeof("xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState.Mode."));
     }
 #endif
   private:
