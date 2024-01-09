@@ -97,6 +97,9 @@ class Host : public HostInherit
     /** @brief Set Value for boot progress last update time */
     uint64_t bootProgressLastUpdate(uint64_t value) override;
 
+    /** @brief Set Value for RestartCause */
+    RestartCause restartCause(RestartCause value) override;
+
     /**
      * @brief Set host reboot count to default
      *
@@ -244,7 +247,9 @@ class Host : public HostInherit
                     sdbusplus::xyz::openbmc_project::State::OperatingSystem::
                         server::Status::operatingSystemState()),
                 sdbusplus::xyz::openbmc_project::State::Boot::
-                    server::Progress::bootProgressLastUpdate());
+                    server::Progress::bootProgressLastUpdate(),
+                convertForMessage(
+                    sdbusplus::xyz::openbmc_project::State::server::Host::restartCause()));
     }
 
     /** @brief Function required by Cereal to perform deserialization.
@@ -262,9 +267,11 @@ class Host : public HostInherit
         std::string reqTranState;
         std::string bootProgress;
         std::string osState;
+        std::string restartCause;
         uint64_t bootProgressLastUpdate;
-        archive(reqTranState, bootProgress, osState, bootProgressLastUpdate);
+        archive(reqTranState, bootProgress, osState, bootProgressLastUpdate, restartCause);
         auto reqTran = Host::convertTransitionFromString(reqTranState);
+        auto restCause = Host::convertRestartCauseFromString(restartCause);
         // When restoring, set the requested state with persistent value
         // but don't call the override which would execute it
         sdbusplus::xyz::openbmc_project::State::server::Host::
@@ -276,6 +283,8 @@ class Host : public HostInherit
                 Host::convertOSStatusFromString(osState));
         sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
             bootProgressLastUpdate(bootProgressLastUpdate);
+        sdbusplus::xyz::openbmc_project::State::server::Host::
+            restartCause(restCause);
     }
 
     /** @brief Serialize and persist requested host state

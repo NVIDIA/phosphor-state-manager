@@ -420,6 +420,13 @@ uint64_t Host::bootProgressLastUpdate(uint64_t value)
     return retVal;
 }
 
+Host::RestartCause Host::restartCause(RestartCause value)
+{
+    auto retVal = server::Host::restartCause(value);
+    serialize();
+    return retVal;
+}
+
 } // namespace manager
 } // namespace state
 } // namespace phosphor
