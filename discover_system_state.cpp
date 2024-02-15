@@ -163,17 +163,19 @@ int main(int argc, char** argv)
         if (RestorePolicy::Policy::AlwaysOn ==
             RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            info(
-                "power_policy=ALWAYS_POWER_ON, powering host on ({DELAY}s delay)",
-                "DELAY", powerRestoreDelaySec.count());
             utils::waitBmcReady(bus, powerRestoreDelaySec);
-            phosphor::state::manager::utils::setProperty(
-                bus, hostPath, HOST_BUSNAME, "RestartCause",
-                convertForMessage(
-                    server::Host::RestartCause::PowerPolicyAlwaysOn));
-            phosphor::state::manager::utils::setProperty(
-                bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
-                convertForMessage(server::Host::Transition::On));
+            // In case no value of restart cause was saved, set to PowerPolicyAlwaysOn
+            if (server::Host::convertRestartCauseFromString(
+                phosphor::state::manager::utils::getProperty(bus, hostPath, HOST_BUSNAME, "RestartCause"))
+                 == server::Host::RestartCause::Unknown)
+                {
+                    info("power_policy=ALWAYS_POWER_ON, powering host on");
+                    phosphor::state::manager::utils::setProperty(bus, hostPath, HOST_BUSNAME, "RestartCause",
+                                convertForMessage(
+                                    server::Host::RestartCause::PowerPolicyAlwaysOn));
+                }
+            phosphor::state::manager::utils::setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                        convertForMessage(server::Host::Transition::On));            
         }
         // Always execute power on if AlwaysOn is set, otherwise check config
         // option (and AC loss status) on whether to execute other policy
@@ -207,18 +209,25 @@ int main(int argc, char** argv)
         else if (RestorePolicy::Policy::Restore ==
                  RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            info("power_policy=RESTORE, restoring last state ({DELAY}s delay)",
-                 "DELAY", powerRestoreDelaySec.count());
             utils::waitBmcReady(bus, powerRestoreDelaySec);
+           // In case no value of restart cause was saved, set to PowerPolicyPreviousState
+            if (server::Host::convertRestartCauseFromString(
+                phosphor::state::manager::utils::getProperty(bus, hostPath, HOST_BUSNAME, "RestartCause"))
+                 == server::Host::RestartCause::Unknown)
+                {
+                    info("power_policy=RESTORE, restoring last state");
+                    phosphor::state::manager::utils::setProperty(
+                        bus, hostPath, HOST_BUSNAME, "RestartCause",
+                        convertForMessage(
+                            server::Host::RestartCause::PowerPolicyPreviousState));
+                }
             // Read last requested state and re-request it to execute it
-            auto hostReqState = phosphor::state::manager::utils::getProperty(
-                bus, hostPath, HOST_BUSNAME, "RequestedHostTransition");
-
-            // As long as the host transition is not 'Off' power on host state.
+            auto hostReqState = phosphor::state::manager::utils::getProperty(bus, hostPath, HOST_BUSNAME,
+                                            "RequestedHostTransition");
             if (hostReqState !=
                 convertForMessage(server::Host::Transition::Off))
             {
-                phosphor::state::manager::utils::setProperty(
+            phosphor::state::manager::utils::setProperty(
                     bus, hostPath, HOST_BUSNAME, "RestartCause",
                     convertForMessage(
                         server::Host::RestartCause::PowerPolicyPreviousState));

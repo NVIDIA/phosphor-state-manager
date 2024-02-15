@@ -101,6 +101,9 @@ class Host : public HostInherit
     /** @brief Set Value for boot progress last update time */
     uint64_t bootProgressLastUpdate(uint64_t value) override;
 
+    /** @brief Set Value for RestartCause */
+    RestartCause restartCause(RestartCause value) override;
+
     /**
      * @brief Set value for allowable auto-reboot count
      *
@@ -165,14 +168,14 @@ class Host : public HostInherit
     {
         auto method = bus.new_method_call("xyz.openbmc_project.Settings.connectx", "/xyz/openbmc_project/network/connectx/smartnic_os_state/os_state",
                                           "org.freedesktop.DBus.Properties", "Get");
-        method.append("xyz.openbmc_project.Control.SmartNicOsState", "SmartNicOsState");
+        method.append("xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState", "SmartNicOsState");
 
         auto response = bus.call(method);
 
         std::variant<std::string> bootProgress;
         response.read(bootProgress);
         auto ret  = std::get<std::string>(bootProgress);
-        return ret.substr(sizeof("xyz.openbmc_project.Control.SmartNicOsState.Mode."));
+        return ret.substr(sizeof("xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState.Mode."));
     }
 #endif
   private:
@@ -275,7 +278,9 @@ class Host : public HostInherit
                     sdbusplus::xyz::openbmc_project::State::OperatingSystem::
                         server::Status::operatingSystemState()),
                 sdbusplus::xyz::openbmc_project::State::Boot::
-                    server::Progress::bootProgressLastUpdate());
+                    server::Progress::bootProgressLastUpdate(),
+                convertForMessage(
+                    sdbusplus::xyz::openbmc_project::State::server::Host::restartCause()));
     }
 
     /** @brief Function required by Cereal to perform deserialization.
@@ -303,9 +308,11 @@ class Host : public HostInherit
                 archive(reqTranState, bootProgress, osState);
                 break;
         }
+        std::string restartCause;
         uint64_t bootProgressLastUpdate;
-        archive(reqTranState, bootProgress, osState, bootProgressLastUpdate);
+        archive(reqTranState, bootProgress, osState, bootProgressLastUpdate, restartCause);
         auto reqTran = Host::convertTransitionFromString(reqTranState);
+        auto restCause = Host::convertRestartCauseFromString(restartCause);
         // When restoring, set the requested state with persistent value
         // but don't call the override which would execute it
         sdbusplus::server::xyz::openbmc_project::state::Host::
@@ -319,6 +326,8 @@ class Host : public HostInherit
             retryAttempts(retryAttempts);
         sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
             bootProgressLastUpdate(bootProgressLastUpdate);
+        sdbusplus::xyz::openbmc_project::State::server::Host::
+            restartCause(restCause);
     }
 
     /** @brief Serialize and persist requested host state
