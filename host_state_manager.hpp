@@ -310,7 +310,7 @@ class Host : public HostInherit
         }
         std::string restartCause;
         uint64_t bootProgressLastUpdate;
-        archive(reqTranState, bootProgress, osState, bootProgressLastUpdate, restartCause);
+        archive(bootProgressLastUpdate, restartCause);
         auto reqTran = Host::convertTransitionFromString(reqTranState);
         auto restCause = Host::convertRestartCauseFromString(restartCause);
         // When restoring, set the requested state with persistent value
