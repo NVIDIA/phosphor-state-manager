@@ -1,3 +1,4 @@
+#include "config.h"
 #include "bmc_state_manager.hpp"
 
 #include "xyz/openbmc_project/Common/error.hpp"
@@ -28,7 +29,8 @@ namespace server = sdbusplus::xyz::openbmc_project::State::server;
 using namespace phosphor::logging;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
 
-constexpr auto obmcStandbyTarget = "multi-user.target";
+constexpr auto obmcStandbyTarget = OBMC_STANDBY_TARGET;
+
 constexpr auto signalDone = "done";
 constexpr auto activeState = "active";
 

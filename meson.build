@@ -64,6 +64,9 @@ conf.set_quoted(
 conf.set_quoted(
     'CHASSIS_ON_FILE', '/run/openbmc/chassis@%d-on')
 
+conf.set_quoted(
+    'OBMC_STANDBY_TARGET', get_option('obmc-standby-target'))
+
 configure_file(output: 'config.h', configuration: conf)
 
 if(get_option('warm-reboot').enabled())
