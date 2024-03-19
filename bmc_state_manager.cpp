@@ -1,3 +1,4 @@
+#include "config.h"
 #include "bmc_state_manager.hpp"
 
 #include "utils.hpp"
@@ -29,7 +30,7 @@ using namespace phosphor::logging;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
 
 constexpr auto obmcQuiesceTarget = "obmc-bmc-service-quiesce@0.target";
-constexpr auto obmcStandbyTarget = "multi-user.target";
+constexpr auto obmcStandbyTarget = OBMC_STANDBY_TARGET;
 constexpr auto signalDone = "done";
 constexpr auto activeState = "active";
 
