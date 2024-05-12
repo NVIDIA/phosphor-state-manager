@@ -4,17 +4,19 @@
 
 #include <unistd.h>
 
-#include <boost/range/adaptor/reversed.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/exception.hpp>
-#include <xyz/openbmc_project/Condition/HostFirmware/server.hpp>
-#include <xyz/openbmc_project/State/Chassis/server.hpp>
+#include <xyz/openbmc_project/Condition/HostFirmware/client.hpp>
+#include <xyz/openbmc_project/ObjectMapper/client.hpp>
+#include <xyz/openbmc_project/State/Chassis/client.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <thread>
 #include <vector>
 
@@ -28,32 +30,29 @@ namespace manager
 PHOSPHOR_LOG2_USING;
 
 using namespace std::literals;
-using namespace sdbusplus::server::xyz::openbmc_project::condition;
+
+using ObjectMapper = sdbusplus::client::xyz::openbmc_project::ObjectMapper<>;
+using Chassis = sdbusplus::client::xyz::openbmc_project::state::Chassis<>;
+using HostFirmware =
+    sdbusplus::client::xyz::openbmc_project::condition::HostFirmware<>;
 
 // Required strings for sending the msg to check on host
-constexpr auto MAPPER_BUSNAME = "xyz.openbmc_project.ObjectMapper";
-constexpr auto MAPPER_PATH = "/xyz/openbmc_project/object_mapper";
-constexpr auto MAPPER_INTERFACE = "xyz.openbmc_project.ObjectMapper";
-constexpr auto CONDITION_HOST_INTERFACE =
-    "xyz.openbmc_project.Condition.HostFirmware";
 constexpr auto CONDITION_HOST_PROPERTY = "CurrentFirmwareCondition";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 constexpr auto CHASSIS_STATE_SVC = "xyz.openbmc_project.State.Chassis";
-constexpr auto CHASSIS_STATE_PATH = "/xyz/openbmc_project/state/chassis";
-constexpr auto CHASSIS_STATE_INTF = "xyz.openbmc_project.State.Chassis";
 constexpr auto CHASSIS_STATE_POWER_PROP = "CurrentPowerState";
 
 // Find all implementations of Condition interface and check if host is
 // running over it
 bool checkFirmwareConditionRunning(sdbusplus::bus_t& bus)
 {
-    using FirmwareCondition = HostFirmware::FirmwareCondition;
     // Find all implementations of host firmware condition interface
-    auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
-                                      MAPPER_INTERFACE, "GetSubTree");
+    auto mapper = bus.new_method_call(ObjectMapper::default_service,
+                                      ObjectMapper::instance_path,
+                                      ObjectMapper::interface, "GetSubTree");
 
-    mapper.append("/", 0, std::vector<std::string>({CONDITION_HOST_INTERFACE}));
+    mapper.append("/", 0, std::vector<std::string>({HostFirmware::interface}));
 
     std::map<std::string, std::map<std::string, std::vector<std::string>>>
         mapperResponse;
@@ -86,8 +85,7 @@ bool checkFirmwareConditionRunning(sdbusplus::bus_t& bus)
     // on D-Bus until it has checked with the host. Therefore it's most
     // efficient to call the PLDM interface first. Do that by going in reverse
     // of the interfaces returned to us (PLDM will be last if available)
-    for (const auto& [path, services] :
-         boost::adaptors::reverse(mapperResponse))
+    for (const auto& [path, services] : std::views::reverse(mapperResponse))
     {
         for (const auto& serviceIter : services)
         {
@@ -97,21 +95,20 @@ bool checkFirmwareConditionRunning(sdbusplus::bus_t& bus)
             {
                 auto method = bus.new_method_call(service.c_str(), path.c_str(),
                                                   PROPERTY_INTERFACE, "Get");
-                method.append(CONDITION_HOST_INTERFACE,
-                              CONDITION_HOST_PROPERTY);
+                method.append(HostFirmware::interface, CONDITION_HOST_PROPERTY);
 
                 auto response = bus.call(method);
-                std::variant<FirmwareCondition> currentFwCondV;
+                std::variant<HostFirmware::FirmwareCondition> currentFwCondV;
                 response.read(currentFwCondV);
                 auto currentFwCond =
-                    std::get<FirmwareCondition>(currentFwCondV);
+                    std::get<HostFirmware::FirmwareCondition>(currentFwCondV);
 
                 info(
                     "Read host fw condition {COND_VALUE} from {COND_SERVICE}, {COND_PATH}",
                     "COND_VALUE", currentFwCond, "COND_SERVICE", service,
                     "COND_PATH", path);
 
-                if (currentFwCond == FirmwareCondition::Running)
+                if (currentFwCond == HostFirmware::FirmwareCondition::Running)
                 {
                     return true;
                 }
@@ -132,23 +129,24 @@ bool checkFirmwareConditionRunning(sdbusplus::bus_t& bus)
 bool isChassiPowerOn(sdbusplus::bus_t& bus, size_t id)
 {
     auto svcname = std::string{CHASSIS_STATE_SVC} + std::to_string(id);
-    auto objpath = std::string{CHASSIS_STATE_PATH} + std::to_string(id);
+    auto objpath = std::string{Chassis::namespace_path::value} + "/" +
+                   std::string{Chassis::namespace_path::chassis} +
+                   std::to_string(id);
 
     try
     {
-        using PowerState =
-            sdbusplus::server::xyz::openbmc_project::state::Chassis::PowerState;
         auto method = bus.new_method_call(svcname.c_str(), objpath.c_str(),
                                           PROPERTY_INTERFACE, "Get");
-        method.append(CHASSIS_STATE_INTF, CHASSIS_STATE_POWER_PROP);
+        method.append(Chassis::interface, CHASSIS_STATE_POWER_PROP);
 
         auto response = bus.call(method);
-        std::variant<PowerState> currentPowerStateV;
+        std::variant<Chassis::PowerState> currentPowerStateV;
         response.read(currentPowerStateV);
 
-        auto currentPowerState = std::get<PowerState>(currentPowerStateV);
+        auto currentPowerState =
+            std::get<Chassis::PowerState>(currentPowerStateV);
 
-        if (currentPowerState == PowerState::On)
+        if (currentPowerState == Chassis::PowerState::On)
         {
             return true;
         }
@@ -198,11 +196,8 @@ bool isHostRunning(size_t id)
             info("Host is running!");
             // Create file for host instance and create in filesystem to
             // indicate to services that host is running
-            auto size = std::snprintf(nullptr, 0, HOST_RUNNING_FILE, 0);
-            size++; // null
-            std::unique_ptr<char[]> buf(new char[size]);
-            std::snprintf(buf.get(), size, HOST_RUNNING_FILE, 0);
-            std::ofstream outfile(buf.get());
+            std::string hostFile = std::format(HOST_RUNNING_FILE, 0);
+            std::ofstream outfile(hostFile);
             outfile.close();
             return true;
         }

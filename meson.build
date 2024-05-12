@@ -81,13 +81,13 @@ conf.set_quoted(
     'BASE_FILE_DIR', '/run/openbmc/')
 
 conf.set_quoted(
-    'CHASSIS_LOST_POWER_FILE', '/run/openbmc/chassis@%d-lost-power')
+    'CHASSIS_LOST_POWER_FILE', '/run/openbmc/chassis@{}-lost-power')
 
 conf.set_quoted(
-    'HOST_RUNNING_FILE', '/run/openbmc/host@%d-on')
+    'HOST_RUNNING_FILE', '/run/openbmc/host@{}-on')
 
 conf.set_quoted(
-    'CHASSIS_ON_FILE', '/run/openbmc/chassis@%d-on')
+    'CHASSIS_ON_FILE', '/run/openbmc/chassis@{}-on')
 
 conf.set_quoted(
     'OBMC_STANDBY_TARGET', get_option('obmc-standby-target'))
@@ -102,13 +102,16 @@ if(get_option('moonraker-oem-boot-progress').enabled())
     add_project_arguments('-DMOONRAKER_OEM_BOOT_PROGRESS',language:'cpp')
 endif
 
+if(get_option('force-warm-reboot').allowed())
+    add_project_arguments('-DENABLE_FORCE_WARM_REBOOT',language:'cpp')
+endif
+
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')
 phosphorlogging = dependency('phosphor-logging')
 phosphordbusinterfaces = dependency('phosphor-dbus-interfaces')
 libgpiod = dependency('libgpiod', version : '>=1.4.1')
-fmt = dependency('fmt')
 
 if cpp.has_header('CLI/CLI.hpp')
     CLI11 = declare_dependency()
@@ -125,7 +128,7 @@ has_cereal = cpp.has_header_symbol(
     required: false)
 if not has_cereal
     cereal_opts = import('cmake').subproject_options()
-    cereal_opts.add_cmake_defines({'BUILD_TESTS': 'OFF'})
+    cereal_opts.add_cmake_defines({'BUILD_TESTS': 'OFF', 'SKIP_PERFORMANCE_COMPARISON': 'ON'})
     cereal_proj = import('cmake').subproject(
         'cereal',
         options: cereal_opts,
@@ -142,7 +145,6 @@ executable('phosphor-host-state-manager',
             'utils.cpp',
             dependencies: [
                 cereal,
-                fmt,
                 libgpiod,
                 phosphordbusinterfaces,
                 phosphorlogging,
@@ -185,7 +187,6 @@ executable('phosphor-chassis-state-manager',
             'utils.cpp',
             dependencies: [
                 cereal,
-                fmt,
                 libgpiod,
                 nlohmann_json_dep,
                 phosphordbusinterfaces,
@@ -201,7 +202,6 @@ executable('phosphor-chassis-check-power-status',
             'chassis_check_power_status.cpp',
             'utils.cpp',
             dependencies: [
-                fmt,
                 libgpiod,
                 phosphordbusinterfaces,
                 phosphorlogging,
@@ -216,7 +216,6 @@ executable('phosphor-bmc-state-manager',
             'bmc_state_manager_main.cpp',
             'utils.cpp',
             dependencies: [
-                fmt,
                 libgpiod,
                 phosphordbusinterfaces,
                 phosphorlogging,
@@ -233,7 +232,6 @@ executable('phosphor-discover-system-state',
             'utils.cpp',
             dependencies: [
                 cereal,
-                fmt,
                 libgpiod,
                 phosphorlogging,
                 sdbusplus,
@@ -289,7 +287,7 @@ executable('phosphor-secure-boot-check',
             'secure_boot_check.cpp',
             'utils.cpp',
             dependencies: [
-            fmt, sdbusplus,
+            sdbusplus,
             phosphorlogging, libgpiod
             ],
     implicit_include_directories: true,
@@ -303,7 +301,7 @@ install_data('obmcutil',
 
 install_data('scripts/host-reboot',
         install_mode: 'rwxr-xr-x',
-        install_dir: get_option('libexecdir')
+        install_dir: get_option('libexecdir')/'phosphor-state-manager'
 )
 
 systemd = dependency('systemd')

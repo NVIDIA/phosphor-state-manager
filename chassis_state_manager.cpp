@@ -6,20 +6,20 @@
 #include "xyz/openbmc_project/Common/error.hpp"
 #include "xyz/openbmc_project/State/Shutdown/Power/error.hpp"
 
-#include <fmt/format.h>
-#include <fmt/printf.h>
-
 #include <cereal/archives/json.hpp>
+#include <org/freedesktop/UPower/Device/client.hpp>
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/exception.hpp>
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/exception.hpp>
+#include <xyz/openbmc_project/ObjectMapper/client.hpp>
 #include <xyz/openbmc_project/State/Chassis/error.hpp>
 #include <xyz/openbmc_project/State/Decorator/PowerSystemInputs/server.hpp>
 
 #include <filesystem>
+#include <format>
 #include <fstream>
 
 namespace phosphor
@@ -35,6 +35,9 @@ PHOSPHOR_LOG2_USING;
 namespace server = sdbusplus::server::xyz::openbmc_project::state;
 namespace decoratorServer =
     sdbusplus::server::xyz::openbmc_project::state::decorator;
+
+using ObjectMapper = sdbusplus::client::xyz::openbmc_project::ObjectMapper<>;
+using UPowerDevice = sdbusplus::client::org::freedesktop::u_power::Device<>;
 
 using namespace phosphor::logging;
 using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
@@ -65,22 +68,16 @@ constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 constexpr auto SYSTEMD_PROPERTY_IFACE = "org.freedesktop.DBus.Properties";
 constexpr auto SYSTEMD_INTERFACE_UNIT = "org.freedesktop.systemd1.Unit";
 
-constexpr auto MAPPER_BUSNAME = "xyz.openbmc_project.ObjectMapper";
-constexpr auto MAPPER_PATH = "/xyz/openbmc_project/object_mapper";
-constexpr auto MAPPER_INTERFACE = "xyz.openbmc_project.ObjectMapper";
-constexpr auto UPOWER_INTERFACE = "org.freedesktop.UPower.Device";
-constexpr auto POWERSYSINPUTS_INTERFACE =
-    "xyz.openbmc_project.State.Decorator.PowerSystemInputs";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 void Chassis::createSystemdTargetTable()
 {
     systemdTargetTable = {
         // Use the hard off target to ensure we shutdown immediately
-        {Transition::Off, fmt::format(CHASSIS_STATE_HARD_POWEROFF_TGT_FMT, id)},
-        {Transition::On, fmt::format(CHASSIS_STATE_POWERON_TGT_FMT, id)},
+        {Transition::Off, std::format(CHASSIS_STATE_HARD_POWEROFF_TGT_FMT, id)},
+        {Transition::On, std::format(CHASSIS_STATE_POWERON_TGT_FMT, id)},
         {Transition::PowerCycle,
-         fmt::format(CHASSIS_STATE_POWERCYCLE_TGT_FMT, id)}};
+         std::format(CHASSIS_STATE_POWERCYCLE_TGT_FMT, id)}};
 }
 
 // TODO - Will be rewritten once sdbusplus client bindings are in place
@@ -92,16 +89,16 @@ void Chassis::determineInitialState()
     uPowerPropChangeSignal = std::make_unique<sdbusplus::bus::match_t>(
         bus,
         sdbusplus::bus::match::rules::propertiesChangedNamespace(
-            "/org/freedesktop/UPower", UPOWER_INTERFACE),
+            "/org/freedesktop/UPower", UPowerDevice::interface),
         [this](auto& msg) { this->uPowerChangeEvent(msg); });
 
     // Monitor for any properties changed signals on PowerSystemInputs
     powerSysInputsPropChangeSignal = std::make_unique<sdbusplus::bus::match_t>(
         bus,
         sdbusplus::bus::match::rules::propertiesChangedNamespace(
-            fmt::format(
+            std::format(
                 "/xyz/openbmc_project/power/power_supplies/chassis{}/psus", id),
-            POWERSYSINPUTS_INTERFACE),
+            decoratorServer::PowerSystemInputs::interface),
         [this](auto& msg) { this->powerSysInputsChangeEvent(msg); });
 
     determineStatusOfPower();
@@ -143,12 +140,12 @@ void Chassis::determineInitialState()
 
                     // Reset host sensors since system is off now
                     // Ensure Power Leds are off.
-                    startUnit(fmt::format(CHASSIS_BLACKOUT_TGT_FMT, id));
+                    startUnit(std::format(CHASSIS_BLACKOUT_TGT_FMT, id));
 
                     setStateChangeTime();
                     // Generate file indicating AC loss occurred
                     std::string chassisLostPowerFileFmt =
-                        fmt::sprintf(CHASSIS_LOST_POWER_FILE, id);
+                        std::format(CHASSIS_LOST_POWER_FILE, id);
                     fs::create_directories(BASE_FILE_DIR);
                     fs::path chassisPowerLossFile{chassisLostPowerFileFmt};
                     std::ofstream outfile(chassisPowerLossFile);
@@ -223,7 +220,7 @@ void Chassis::determineStatusOfPower()
             info("power status transitioned from {START_PWR_STATE} to Good and "
                  "chassis power is off, calling APR",
                  "START_PWR_STATE", initialPowerStatus);
-            restartUnit(fmt::format(AUTO_POWER_RESTORE_SVC_FMT, this->id));
+            restartUnit(std::format(AUTO_POWER_RESTORE_SVC_FMT, this->id));
         }
     }
 }
@@ -231,10 +228,11 @@ void Chassis::determineStatusOfPower()
 bool Chassis::determineStatusOfUPSPower()
 {
     // Find all implementations of the UPower interface
-    auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
-                                      MAPPER_INTERFACE, "GetSubTree");
+    auto mapper = bus.new_method_call(ObjectMapper::default_service,
+                                      ObjectMapper::instance_path,
+                                      ObjectMapper::interface, "GetSubTree");
 
-    mapper.append("/", 0, std::vector<std::string>({UPOWER_INTERFACE}));
+    mapper.append("/", 0, std::vector<std::string>({UPowerDevice::interface}));
 
     std::map<std::string, std::map<std::string, std::vector<std::string>>>
         mapperResponse;
@@ -266,7 +264,7 @@ bool Chassis::determineStatusOfUPSPower()
             {
                 auto method = bus.new_method_call(service.c_str(), path.c_str(),
                                                   PROPERTY_INTERFACE, "GetAll");
-                method.append(UPOWER_INTERFACE);
+                method.append(UPowerDevice::interface);
 
                 auto response = bus.call(method);
                 using Property = std::string;
@@ -337,10 +335,13 @@ bool Chassis::determineStatusOfUPSPower()
 bool Chassis::determineStatusOfPSUPower()
 {
     // Find all implementations of the PowerSystemInputs interface
-    auto mapper = bus.new_method_call(MAPPER_BUSNAME, MAPPER_PATH,
-                                      MAPPER_INTERFACE, "GetSubTree");
+    auto mapper = bus.new_method_call(ObjectMapper::default_service,
+                                      ObjectMapper::instance_path,
+                                      ObjectMapper::interface, "GetSubTree");
 
-    mapper.append("/", 0, std::vector<std::string>({POWERSYSINPUTS_INTERFACE}));
+    mapper.append("/", 0,
+                  std::vector<std::string>(
+                      {decoratorServer::PowerSystemInputs::interface}));
 
     std::map<std::string, std::map<std::string, std::vector<std::string>>>
         mapperResponse;
@@ -367,7 +368,7 @@ bool Chassis::determineStatusOfPSUPower()
             {
                 auto method = bus.new_method_call(service.c_str(), path.c_str(),
                                                   PROPERTY_INTERFACE, "GetAll");
-                method.append(POWERSYSINPUTS_INTERFACE);
+                method.append(decoratorServer::PowerSystemInputs::interface);
 
                 auto response = bus.call(method);
                 using Property = std::string;
@@ -553,7 +554,7 @@ int Chassis::sysStateChange(sdbusplus::message_t& msg)
         return 0;
     }
 
-    if ((newStateUnit == fmt::format(CHASSIS_STATE_POWEROFF_TGT_FMT, id)) &&
+    if ((newStateUnit == std::format(CHASSIS_STATE_POWEROFF_TGT_FMT, id)) &&
         (newStateResult == "done") &&
         (!stateActive(systemdTargetTable[Transition::On])))
     {
@@ -574,13 +575,10 @@ int Chassis::sysStateChange(sdbusplus::message_t& msg)
         // This file is used to indicate to chassis related systemd services
         // that the chassis is already on and they should skip running.
         // Once the chassis state is back to on we can clear this file.
-        auto size = std::snprintf(nullptr, 0, CHASSIS_ON_FILE, 0);
-        size++; // null
-        std::unique_ptr<char[]> chassisFile(new char[size]);
-        std::snprintf(chassisFile.get(), size, CHASSIS_ON_FILE, 0);
-        if (std::filesystem::exists(chassisFile.get()))
+        auto chassisFile = std::format(CHASSIS_ON_FILE, 0);
+        if (std::filesystem::exists(chassisFile))
         {
-            std::filesystem::remove(chassisFile.get());
+            std::filesystem::remove(chassisFile);
         }
     }
 
@@ -651,7 +649,7 @@ void Chassis::restorePOHCounter()
 
 fs::path Chassis::serializePOH()
 {
-    fs::path path{fmt::format(POH_COUNTER_PERSIST_PATH, id)};
+    fs::path path{std::format(POH_COUNTER_PERSIST_PATH, id)};
     std::ofstream os(path.c_str(), std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
     oarchive(pohCounter());
@@ -660,7 +658,7 @@ fs::path Chassis::serializePOH()
 
 bool Chassis::deserializePOH(uint32_t& pohCounter)
 {
-    fs::path path{fmt::format(POH_COUNTER_PERSIST_PATH, id)};
+    fs::path path{std::format(POH_COUNTER_PERSIST_PATH, id)};
     try
     {
         if (fs::exists(path))
@@ -707,7 +705,7 @@ void Chassis::startPOHCounter()
 
 void Chassis::serializeStateChangeTime()
 {
-    fs::path path{fmt::format(CHASSIS_STATE_CHANGE_PERSIST_PATH, id)};
+    fs::path path{std::format(CHASSIS_STATE_CHANGE_PERSIST_PATH, id)};
     std::ofstream os(path.c_str(), std::ios::binary);
     cereal::JSONOutputArchive oarchive(os);
 
@@ -717,7 +715,7 @@ void Chassis::serializeStateChangeTime()
 
 bool Chassis::deserializeStateChangeTime(uint64_t& time, PowerState& state)
 {
-    fs::path path{fmt::format(CHASSIS_STATE_CHANGE_PERSIST_PATH, id)};
+    fs::path path{std::format(CHASSIS_STATE_CHANGE_PERSIST_PATH, id)};
 
     try
     {

@@ -4,7 +4,6 @@
 
 #include "settings.hpp"
 #include "utils.hpp"
-#include "xyz/openbmc_project/State/Host/server.hpp"
 
 #include <cereal/access.hpp>
 #include <cereal/cereal.hpp>
@@ -12,6 +11,7 @@
 #include <sdbusplus/bus.hpp>
 #include <xyz/openbmc_project/Control/Boot/RebootAttempts/server.hpp>
 #include <xyz/openbmc_project/State/Boot/Progress/server.hpp>
+#include <xyz/openbmc_project/State/Host/server.hpp>
 #include <xyz/openbmc_project/State/OperatingSystem/Status/server.hpp>
 
 #include <filesystem>
@@ -77,6 +77,9 @@ class Host : public HostInherit
 
         // Will throw exception on fail
         determineInitialState();
+
+        // Setup supported transitions against this host object
+        setupSupportedTransitions();
 
         // Sets auto-reboot attempts to max-allowed
         attemptsLeft(sdbusplus::server::xyz::openbmc_project::control::boot::
@@ -185,6 +188,13 @@ class Host : public HostInherit
      * @return Will throw exceptions on failure
      **/
     void determineInitialState();
+
+    /**
+     * @brief Configure supported transitions for system
+     *
+     * @return Will throw exceptions on failure
+     **/
+    void setupSupportedTransitions();
 
     /**
      * create systemd target instance names and mapping table
