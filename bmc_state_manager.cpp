@@ -1,4 +1,5 @@
 #include "config.h"
+
 #include "bmc_state_manager.hpp"
 
 #include "utils.hpp"
@@ -118,7 +119,6 @@ void BMC::discoverInitialState()
 
 bool BMC::executeTransition(const Transition tranReq)
 {
-
     std::string messageId = "OpenBMC.0.4.BMCRebootReason";
     std::string messageArgs{};
     switch (tranReq)

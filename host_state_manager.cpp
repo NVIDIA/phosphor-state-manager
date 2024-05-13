@@ -103,14 +103,12 @@ void Host::createSystemdTargetMaps()
         {Transition::GracefulWarmReboot,
          fmt::format("obmc-host-warm-reboot@{}.target", id)},
         {Transition::ForceWarmReboot,
-         fmt::format("obmc-host-force-warm-reboot@{}.target", id)}
-    };
+         fmt::format("obmc-host-force-warm-reboot@{}.target", id)}};
 #else
         {Transition::GracefulWarmReboot,
          fmt::format("obmc-host-reboot@{}.target", id)},
         {Transition::ForceWarmReboot,
-         fmt::format("obmc-host-reboot@{}.target", id)}
-    };
+         fmt::format("obmc-host-reboot@{}.target", id)}};
 #endif
     hostCrashTarget = fmt::format("obmc-host-crash@{}.target", id);
 }

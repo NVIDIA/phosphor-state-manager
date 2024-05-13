@@ -158,7 +158,7 @@ class Host : public HostInherit
     }
 
 #ifdef MOONRAKER_OEM_BOOT_PROGRESS
- /** @brief override to support moonraker OEM boot state */
+    /** @brief override to support moonraker OEM boot state */
     virtual ProgressStages bootProgress() const override
     {
         return ProgressStages::OEM;
@@ -166,16 +166,21 @@ class Host : public HostInherit
 
     virtual std::string bootProgressOem() const override
     {
-        auto method = bus.new_method_call("xyz.openbmc_project.Settings.connectx", "/xyz/openbmc_project/network/connectx/smartnic_os_state/os_state",
-                                          "org.freedesktop.DBus.Properties", "Get");
-        method.append("xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState", "SmartNicOsState");
+        auto method = bus.new_method_call(
+            "xyz.openbmc_project.Settings.connectx",
+            "/xyz/openbmc_project/network/connectx/smartnic_os_state/os_state",
+            "org.freedesktop.DBus.Properties", "Get");
+        method.append(
+            "xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState",
+            "SmartNicOsState");
 
         auto response = bus.call(method);
 
         std::variant<std::string> bootProgress;
         response.read(bootProgress);
-        auto ret  = std::get<std::string>(bootProgress);
-        return ret.substr(sizeof("xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState.Mode."));
+        auto ret = std::get<std::string>(bootProgress);
+        return ret.substr(sizeof(
+            "xyz.openbmc_project.Control.NcSi.OEM.Nvidia.SmartNicOsState.Mode."));
     }
 #endif
   private:
@@ -277,10 +282,10 @@ class Host : public HostInherit
                 convertForMessage(
                     sdbusplus::xyz::openbmc_project::State::OperatingSystem::
                         server::Status::operatingSystemState()),
-                sdbusplus::xyz::openbmc_project::State::Boot::
-                    server::Progress::bootProgressLastUpdate(),
-                convertForMessage(
-                    sdbusplus::xyz::openbmc_project::State::server::Host::restartCause()));
+                sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
+                    bootProgressLastUpdate(),
+                convertForMessage(sdbusplus::xyz::openbmc_project::State::
+                                      server::Host::restartCause()));
     }
 
     /** @brief Function required by Cereal to perform deserialization.
@@ -326,8 +331,8 @@ class Host : public HostInherit
             retryAttempts(retryAttempts);
         sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
             bootProgressLastUpdate(bootProgressLastUpdate);
-        sdbusplus::xyz::openbmc_project::State::server::Host::
-            restartCause(restCause);
+        sdbusplus::xyz::openbmc_project::State::server::Host::restartCause(
+            restCause);
     }
 
     /** @brief Serialize and persist requested host state

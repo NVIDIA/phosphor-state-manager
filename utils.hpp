@@ -12,8 +12,7 @@ namespace manager
 namespace utils
 {
 
-using PropertyValue = std::variant<int, std::string,
- bool>;
+using PropertyValue = std::variant<int, std::string, bool>;
 /** @brief Tell systemd to generate d-bus events
  *
  * @param[in] bus          - The Dbus bus object
@@ -100,7 +99,8 @@ bool checkACLoss(size_t& chassisId);
  * @param[in] value        - The value of property
  */
 PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& path,
-                 const std::string& interface, const std::string& property);
+                            const std::string& interface,
+                            const std::string& property);
 /** @brief Determine if the BMC is at its Ready state
  *
  * @param[in] bus          - The Dbus bus object
