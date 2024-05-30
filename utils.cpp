@@ -33,7 +33,10 @@ constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 // Get the property value
-PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& objectPath, const std::string& interface, const std::string& propertyName)
+PropertyValue getPropertyV2(sdbusplus::bus::bus& bus,
+                            const std::string& objectPath,
+                            const std::string& interface,
+                            const std::string& propertyName)
 {
     static auto newBus = sdbusplus::bus::new_default();
     PropertyValue value{};
@@ -46,7 +49,7 @@ PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& objectP
     }
 
     auto method = newBus.new_method_call(service.c_str(), objectPath.c_str(),
-                                      PROPERTY_INTERFACE, "Get");
+                                         PROPERTY_INTERFACE, "Get");
     method.append(interface, propertyName);
     auto reply = newBus.call(method);
     reply.read(value);
@@ -111,7 +114,7 @@ std::string getService(sdbusplus::bus_t& bus, std::string path,
     return mapperResponse.begin()->first;
 }
 
-//get property value with string return type
+// get property value with string return type
 std::string getProperty(sdbusplus::bus_t& bus, const std::string& path,
                         const std::string& interface,
                         const std::string& propertyName)
