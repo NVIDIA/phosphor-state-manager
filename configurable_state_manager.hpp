@@ -189,7 +189,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
 
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
-            const std::string& ifaceName = interfaceEntry.first;
+            const std::string ifaceName = interfaceEntry.first;
             const std::vector<std::string>& objPaths = interfaceEntry.second;
 
             for (const std::string& objPath : objPaths)
@@ -198,7 +198,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                     sdbusplus::bus::match::match(
                         bus,
                         sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), std::string(ifaceName)),
+                            std::string(objPath), ifaceName),
                         [&](sdbusplus::message::message& msg) {
                     try
                     {
@@ -226,7 +226,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                         sdbusplus::bus::match::rules::interfacesAdded() +
                             sdbusplus::bus::match::rules::argNpath(
                                 0, std::string(objPath)),
-                        [&](sdbusplus::message::message& msg) {
+                        [this, ifaceName](sdbusplus::message::message& msg) {
                     std::map<std::string,
                              std::map<std::string, std::variant<std::string>>>
                         interfacesMap;
@@ -321,7 +321,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
 
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
-            const std::string& ifaceName = interfaceEntry.first;
+            const std::string ifaceName = interfaceEntry.first;
             const std::vector<std::string>& objPaths = interfaceEntry.second;
 
             for (const std::string& objPath : objPaths)
@@ -330,7 +330,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                     sdbusplus::bus::match::match(
                         bus,
                         sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), std::string(ifaceName)),
+                            std::string(objPath), ifaceName),
                         [&](sdbusplus::message::message& msg) {
                     try
                     {
@@ -358,7 +358,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                         sdbusplus::bus::match::rules::interfacesAdded() +
                             sdbusplus::bus::match::rules::argNpath(
                                 0, std::string(objPath)),
-                        [&](sdbusplus::message::message& msg) {
+                        [this, ifaceName](sdbusplus::message::message& msg) {
                     std::map<std::string,
                              std::map<std::string, std::variant<std::string>>>
                         interfacesMap;
@@ -453,7 +453,7 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
 
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
-            const std::string& ifaceName = interfaceEntry.first;
+            const std::string ifaceName = interfaceEntry.first;
             const std::vector<std::string>& objPaths = interfaceEntry.second;
 
             for (const std::string& objPath : objPaths)
@@ -462,7 +462,7 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                     sdbusplus::bus::match::match(
                         bus,
                         sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), std::string(ifaceName)),
+                            std::string(objPath), ifaceName),
                         [&](sdbusplus::message::message& msg) {
                     try
                     {
@@ -490,7 +490,7 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                         sdbusplus::bus::match::rules::interfacesAdded() +
                             sdbusplus::bus::match::rules::argNpath(
                                 0, std::string(objPath)),
-                        [&](sdbusplus::message::message& msg) {
+                        [this, ifaceName](sdbusplus::message::message& msg) {
                     std::map<std::string,
                              std::map<std::string, std::variant<std::string>>>
                         interfacesMap;
@@ -585,7 +585,7 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
 
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
-            const std::string& ifaceName = interfaceEntry.first;
+            const std::string ifaceName = interfaceEntry.first;
             const std::vector<std::string>& objPaths = interfaceEntry.second;
 
             for (const std::string& objPath : objPaths)
@@ -594,7 +594,7 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                     sdbusplus::bus::match::match(
                         bus,
                         sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), std::string(ifaceName)),
+                            std::string(objPath), ifaceName),
                         [&](sdbusplus::message::message& msg) {
                     try
                     {
@@ -622,7 +622,7 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                         sdbusplus::bus::match::rules::interfacesAdded() +
                             sdbusplus::bus::match::rules::argNpath(
                                 0, std::string(objPath)),
-                        [&](sdbusplus::message::message& msg) {
+                        [this, ifaceName](sdbusplus::message::message& msg) {
                     std::map<std::string,
                              std::map<std::string, std::variant<std::string>>>
                         interfacesMap;
@@ -709,7 +709,7 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
 
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
-            const std::string& ifaceName = interfaceEntry.first;
+            const std::string ifaceName = interfaceEntry.first;
             const std::vector<std::string>& objPaths = interfaceEntry.second;
 
             for (const std::string& objPath : objPaths)
@@ -719,7 +719,7 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                     sdbusplus::bus::match::match(
                         bus,
                         sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), std::string(ifaceName)),
+                            std::string(objPath), ifaceName),
                         [&](sdbusplus::message::message& msg) {
                     try
                     {
@@ -749,7 +749,7 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                         sdbusplus::bus::match::rules::interfacesAdded() +
                             sdbusplus::bus::match::rules::argNpath(
                                 0, std::string(objPath)),
-                        [&](sdbusplus::message::message& msg) {
+                        [this, ifaceName](sdbusplus::message::message& msg) {
                     std::map<std::string,
                              std::map<std::string, std::variant<std::string>>>
                         interfacesMap;
