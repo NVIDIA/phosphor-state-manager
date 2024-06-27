@@ -151,7 +151,7 @@ class BMC : public BMCInherit
     void updateLastRebootTime();
 
     /**
-     * @brief the lastRebootTime calcuated at startup.
+     * @brief the lastRebootTime calculated at startup.
      **/
     uint64_t rebootTime;
 };
