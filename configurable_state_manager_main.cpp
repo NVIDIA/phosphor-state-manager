@@ -97,8 +97,8 @@ void StateMachineHandler::executeTransition()
                     // if service is empty set unknown state and return
                     if (service.empty())
                     {
-                        log<level::ERR>("Unable to fetch service name");
-                        setPropertyValue(stateProperty, errorState);
+                        log<level::ERR>("Unable to fetch service name, setting state as default state");
+                        setPropertyValue(stateProperty, defaultState);
                         return;
                     }
 
@@ -126,7 +126,7 @@ void StateMachineHandler::executeTransition()
                 {
                     auto errStrPath =
                         (boost::format(
-                             "Got error with getProperty() for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s. ") %
+                             "Got error with getProperty() for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s, hence setting state as default state") %
                          objectPath % condition.intf % condition.property %
                          e.what())
                             .str();
@@ -134,7 +134,7 @@ void StateMachineHandler::executeTransition()
 
                     // set the fallback condition as we are getting error while
                     // evaluating condition
-                    setPropertyValue(stateProperty, errorState);
+                    setPropertyValue(stateProperty, defaultState);
                     return;
                 }
 
@@ -186,9 +186,9 @@ void StateMachineHandler::executeTransition()
             else
             {
                 // other cases of not supported logics
-                log<level::ERR>("Unsupported logic gate used");
+                log<level::ERR>("Unsupported logic gate used, hence setting state as default state");
                 // set state to unknown as feature evaluation got error
-                setPropertyValue(stateProperty, errorState);
+                setPropertyValue(stateProperty, defaultState);
                 return;
             }
         }
