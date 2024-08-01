@@ -67,7 +67,7 @@ class Host : public HostInherit
                 sdbusRule::path("/org/freedesktop/systemd1") +
                 sdbusRule::interface("org.freedesktop.systemd1.Manager"),
             [this](sdbusplus::message_t& m) { sysStateChangeJobNew(m); }),
-        settings(bus, id), id(id)
+        settings(bus, id), id(id), objPath(objPath)
     {
         // Enable systemd signals
         utils::subscribeToSystemdSignals(bus);
@@ -389,6 +389,9 @@ class Host : public HostInherit
 
     /** @brief Target called when a host crash occurs **/
     std::string hostCrashTarget;
+
+    /** @brief object path **/
+    std::string objPath;
 };
 
 } // namespace manager
