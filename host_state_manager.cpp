@@ -15,6 +15,7 @@
 #include <cereal/types/vector.hpp>
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/lg2.hpp>
+#include <phosphor-logging/redfish_event_log.hpp>
 #include <sdbusplus/exception.hpp>
 #include <sdbusplus/server.hpp>
 #include <xyz/openbmc_project/Common/error.hpp>
@@ -430,6 +431,33 @@ Host::Transition Host::requestedHostTransition(Transition value)
     {
         decrementRebootCount();
     }
+    std::string transitionStr;
+    if(value == Transition::Off)
+    {
+        transitionStr = "Off";
+    }
+    else if(value == Transition::On)
+    {
+        transitionStr = "On";
+    }
+    else if(value == Transition::Reboot)
+    {
+        transitionStr = "Reboot";
+    }
+    else if(value == Transition::GracefulWarmReboot)
+    {
+        transitionStr = "GracefulWarmReboot";
+    }
+    else
+    {
+        transitionStr = "Unknown";
+    }
+    // send a redfish event
+    std::vector<std::string> messageArgs = {"RequestedHostTransition",
+                                             transitionStr};
+    info("objectPath: {PATH}", "PATH", objPath);
+    sendEvent(MESSAGE_TYPE::PROPERTY_VALUE_MODIFIED,
+               Entry::Level::Informational, messageArgs, objPath);
 
     executeTransition(value);
 
