@@ -191,15 +191,24 @@ bool isHostRunning(size_t id)
             "ID", id);
         // Give mapper a small window to introspect new objects on bus
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        if (checkFirmwareConditionRunning(bus))
+        try
         {
-            info("Host is running!");
-            // Create file for host instance and create in filesystem to
-            // indicate to services that host is running
-            std::string hostFile = std::format(HOST_RUNNING_FILE, 0);
-            std::ofstream outfile(hostFile);
-            outfile.close();
-            return true;
+            if (checkFirmwareConditionRunning(bus))
+            {
+                info("Host is running!");
+                // Create file for host instance and create in filesystem to
+                // indicate to services that host is running
+                std::string hostFile = std::format(HOST_RUNNING_FILE, 0);
+                std::ofstream outfile(hostFile);
+                outfile.close();
+                return true;
+            }
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            // sdbusplus exception throwed when dbus isn't ready,
+            // sleep and retry
+            continue;
         }
     }
     info("Host is not running!");
