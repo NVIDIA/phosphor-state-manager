@@ -117,8 +117,8 @@ class StateMachineHandler
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const char* objPathCreated,
         const std::vector<State>& states) :
-        interfaceName(interfaceName), featureType(featureType),
-        servicesToBeMonitored(servicesToBeMonitored),
+        interfaceName(interfaceName),
+        featureType(featureType), servicesToBeMonitored(servicesToBeMonitored),
         stateProperty(stateProperty), defaultState(defaultState),
         errorState(errorState), objPathCreated(objPathCreated), states(states)
     {}

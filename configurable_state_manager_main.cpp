@@ -97,7 +97,8 @@ void StateMachineHandler::executeTransition()
                     // if service is empty set unknown state and return
                     if (service.empty())
                     {
-                        log<level::ERR>("Unable to fetch service name, setting state as default state");
+                        log<level::ERR>(
+                            "Unable to fetch service name, setting state as default state");
                         setPropertyValue(stateProperty, defaultState);
                         return;
                     }
@@ -186,7 +187,8 @@ void StateMachineHandler::executeTransition()
             else
             {
                 // other cases of not supported logics
-                log<level::ERR>("Unsupported logic gate used, hence setting state as default state");
+                log<level::ERR>(
+                    "Unsupported logic gate used, hence setting state as default state");
                 // set state to unknown as feature evaluation got error
                 setPropertyValue(stateProperty, defaultState);
                 return;

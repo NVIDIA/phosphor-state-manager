@@ -26,7 +26,8 @@ class Host : public HostIntf
 
     Host(sdbusplus::bus_t& bus, const std::string& path,
          const std::string& hostId) :
-        HostIntf(bus, path.c_str()), lineName("host" + hostId)
+        HostIntf(bus, path.c_str()),
+        lineName("host" + hostId)
     {
         scanGpioPin();
     };

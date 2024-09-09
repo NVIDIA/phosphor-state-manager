@@ -432,19 +432,19 @@ Host::Transition Host::requestedHostTransition(Transition value)
         decrementRebootCount();
     }
     std::string transitionStr;
-    if(value == Transition::Off)
+    if (value == Transition::Off)
     {
         transitionStr = "Off";
     }
-    else if(value == Transition::On)
+    else if (value == Transition::On)
     {
         transitionStr = "On";
     }
-    else if(value == Transition::Reboot)
+    else if (value == Transition::Reboot)
     {
         transitionStr = "Reboot";
     }
-    else if(value == Transition::GracefulWarmReboot)
+    else if (value == Transition::GracefulWarmReboot)
     {
         transitionStr = "GracefulWarmReboot";
     }
@@ -454,10 +454,10 @@ Host::Transition Host::requestedHostTransition(Transition value)
     }
     // send a redfish event
     std::vector<std::string> messageArgs = {"RequestedHostTransition",
-                                             transitionStr};
+                                            transitionStr};
     info("objectPath: {PATH}", "PATH", objPath);
     sendEvent(MESSAGE_TYPE::PROPERTY_VALUE_MODIFIED,
-               Entry::Level::Informational, messageArgs, objPath);
+              Entry::Level::Informational, messageArgs, objPath);
 
     executeTransition(value);
 

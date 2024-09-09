@@ -31,7 +31,8 @@ class SystemdTargetLogging
     SystemdTargetLogging(const TargetErrorData& targetData,
                          const ServiceMonitorData& serviceData,
                          sdbusplus::bus_t& bus) :
-        targetData(targetData), serviceData(serviceData), bus(bus),
+        targetData(targetData),
+        serviceData(serviceData), bus(bus),
         systemdJobRemovedSignal(
             bus,
             sdbusplus::bus::match::rules::type::signal() +
