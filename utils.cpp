@@ -223,8 +223,9 @@ void createError(
     }
 }
 
-void createBmcDump(sdbusplus::bus_t& bus)
+void createBmcDump(sdbusplus::bus_t& bus [[maybe_unused]])
 {
+#ifdef ENABLE_BMC_DUMP
     using DumpCreate = sdbusplus::client::xyz::openbmc_project::dump::Create<>;
     auto dumpPath =
         sdbusplus::message::object_path(DumpCreate::namespace_path::value) /
@@ -246,6 +247,7 @@ void createBmcDump(sdbusplus::bus_t& bus)
         // just continue, this is error path anyway so we're just collecting
         // what we can
     }
+#endif
 }
 
 bool checkACLoss(size_t& chassisId)

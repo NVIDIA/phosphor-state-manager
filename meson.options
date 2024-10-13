@@ -159,6 +159,11 @@ option('moonraker-oem-boot-progress', type : 'feature',
     description : 'Enable moonraker oem os state',
 )
 
+option('enable-bmc-dump', type : 'feature',
+    value : 'enabled',
+    description : 'In case of error, enable bmc dump for debug',
+)
+
 option('sysfs-tpm-device-path', type : 'string',
     value : '/sys/firmware/devicetree/base/ahb/apb/bus@1e78a000/i2c-bus@680/tpm@2e',
     description : 'The sysfs path to the tpm device.',

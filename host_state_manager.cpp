@@ -254,7 +254,8 @@ bool Host::isAutoReboot()
             else
             {
                 // We are at 0 so reset reboot counter and go to quiesce state
-                info("Auto reboot enabled but HOST BOOTCOUNT already set to 0");
+                error(
+                    "Auto reboot enabled but HOST BOOTCOUNT already set to 0");
                 attemptsLeft(reboot::RebootAttempts::retryAttempts());
 
                 // Generate log since we will now be sitting in Quiesce

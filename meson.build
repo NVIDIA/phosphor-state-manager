@@ -102,6 +102,10 @@ if(get_option('moonraker-oem-boot-progress').enabled())
     add_project_arguments('-DMOONRAKER_OEM_BOOT_PROGRESS',language:'cpp')
 endif
 
+if(get_option('enable-bmc-dump').enabled())
+    add_project_arguments('-DENABLE_BMC_DUMP',language:'cpp')
+endif
+
 if(get_option('force-warm-reboot').allowed())
     add_project_arguments('-DENABLE_FORCE_WARM_REBOOT',language:'cpp')
 endif
