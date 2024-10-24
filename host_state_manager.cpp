@@ -5,7 +5,6 @@
 #include "host_check.hpp"
 #include "utils.hpp"
 
-#include <stdio.h>
 #include <systemd/sd-bus.h>
 
 #include <cereal/archives/json.hpp>
@@ -119,14 +118,12 @@ void Host::createSystemdTargetMaps()
         {Transition::GracefulWarmReboot,
          std::format("obmc-host-warm-reboot@{}.target", id)},
         {Transition::ForceWarmReboot,
-         std::format("obmc-host-force-warm-reboot@{}.target", id)}
-    };
+         std::format("obmc-host-force-warm-reboot@{}.target", id)}};
 #else
         {Transition::GracefulWarmReboot,
          std::format("obmc-host-reboot@{}.target", id)},
         {Transition::ForceWarmReboot,
-         std::format("obmc-host-reboot@{}.target", id)}
-    };
+         std::format("obmc-host-reboot@{}.target", id)}};
 #endif
     hostCrashTarget = std::format("obmc-host-crash@{}.target", id);
 }
@@ -143,7 +140,7 @@ const std::string& Host::getTarget(Transition tranReq)
 
 void Host::executeTransition(Transition tranReq)
 {
-    auto& sysdUnit = getTarget(tranReq);
+    const auto& sysdUnit = getTarget(tranReq);
 
     auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
                                             SYSTEMD_INTERFACE, "StartUnit");

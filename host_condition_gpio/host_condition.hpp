@@ -22,12 +22,11 @@ class Host : public HostIntf
     Host& operator=(const Host&) = delete;
     Host(Host&&) = delete;
     Host& operator=(Host&&) = delete;
-    virtual ~Host() = default;
+    ~Host() override = default;
 
     Host(sdbusplus::bus_t& bus, const std::string& path,
          const std::string& hostId) :
-        HostIntf(bus, path.c_str()),
-        lineName("host" + hostId)
+        HostIntf(bus, path.c_str()), lineName("host" + hostId)
     {
         scanGpioPin();
     };

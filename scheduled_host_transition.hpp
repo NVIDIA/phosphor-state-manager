@@ -8,14 +8,14 @@
 #include <xyz/openbmc_project/State/Host/server.hpp>
 #include <xyz/openbmc_project/State/ScheduledHostTransition/server.hpp>
 
-class TestScheduledHostTransition;
-
 namespace phosphor
 {
 namespace state
 {
 namespace manager
 {
+
+class TestScheduledHostTransition;
 
 using Transition =
     sdbusplus::server::xyz::openbmc_project::state::Host::Transition;
@@ -45,7 +45,7 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
         this->emit_object_added();
     }
 
-    ~ScheduledHostTransition();
+    ~ScheduledHostTransition() override;
 
     /**
      * @brief Handle with scheduled time
@@ -79,7 +79,7 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
      *
      *  @return - return current epoch time
      */
-    std::chrono::seconds getTime();
+    static std::chrono::seconds getTime();
 
     /** @brief Implement host transition
      *
@@ -107,11 +107,11 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
     /** @brief The deleter of sd_event_source */
     std::function<void(sd_event_source*)> sdEventSourceDeleter =
         [](sd_event_source* p) {
-        if (p)
-        {
-            sd_event_source_unref(p);
-        }
-    };
+            if (p != nullptr)
+            {
+                sd_event_source_unref(p);
+            }
+        };
 
     using SdEventSource =
         std::unique_ptr<sd_event_source, decltype(sdEventSourceDeleter)>;
@@ -132,7 +132,7 @@ class ScheduledHostTransition : public ScheduledHostTransitionInherit
      *
      *  @return bool - true if successful, false otherwise
      */
-    bool deserializeScheduledValues(uint64_t& time, Transition& trans);
+    static bool deserializeScheduledValues(uint64_t& time, Transition& trans);
 
     /** @brief Restore scheduled time and requested transition from persisted
      * file */

@@ -94,14 +94,18 @@ seconds ScheduledHostTransition::getTime()
 
 void ScheduledHostTransition::hostTransition()
 {
-    auto hostPath = std::string{HOST_OBJPATH} + std::to_string(id);
+    auto hostName = std::string(HostState::namespace_path::host) +
+                    std::to_string(id);
+    std::string hostPath =
+        sdbusplus::message::object_path(HostState::namespace_path::value) /
+        hostName;
 
     auto reqTrans = convertForMessage(HostTransition::scheduledTransition());
 
     info("Trying to set requestedTransition to {REQUESTED_TRANSITION}",
          "REQUESTED_TRANSITION", reqTrans);
 
-    utils::setProperty(bus, hostPath, HOST_BUSNAME, PROPERTY_TRANSITION,
+    utils::setProperty(bus, hostPath, HostState::interface, PROPERTY_TRANSITION,
                        reqTrans);
 
     // Set RestartCause to indicate this transition is occurring due to a
@@ -111,8 +115,8 @@ void ScheduledHostTransition::hostTransition()
         info("Set RestartCause to scheduled power on reason");
         auto resCause =
             convertForMessage(HostState::RestartCause::ScheduledPowerOn);
-        utils::setProperty(bus, hostPath, HOST_BUSNAME, PROPERTY_RESTART_CAUSE,
-                           resCause);
+        utils::setProperty(bus, hostPath, HostState::interface,
+                           PROPERTY_RESTART_CAUSE, resCause);
     }
 }
 
@@ -237,18 +241,17 @@ void ScheduledHostTransition::handleTimeUpdates()
     }
 }
 
-int ScheduledHostTransition::onTimeChange(sd_event_source* /* es */, int fd,
-                                          uint32_t /* revents */,
-                                          void* userdata)
+int ScheduledHostTransition::onTimeChange(
+    sd_event_source* /* es */, int fd, uint32_t /* revents */, void* userdata)
 {
-    auto schedHostTran = static_cast<ScheduledHostTransition*>(userdata);
+    auto* schedHostTran = static_cast<ScheduledHostTransition*>(userdata);
 
     std::array<char, 64> time{};
 
     // We are not interested in the data here.
     // So read until there is no new data here in the FD
     while (read(fd, time.data(), time.max_size()) > 0)
-        ;
+    {}
 
     debug("BMC system time is changed");
     schedHostTran->handleTimeUpdates();

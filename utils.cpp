@@ -231,9 +231,9 @@ void createBmcDump(sdbusplus::bus_t& bus [[maybe_unused]])
         sdbusplus::message::object_path(DumpCreate::namespace_path::value) /
         DumpCreate::namespace_path::bmc;
 
-    auto method = bus.new_method_call(DumpCreate::default_service,
-                                      dumpPath.str.c_str(),
-                                      DumpCreate::interface, "CreateDump");
+    auto method =
+        bus.new_method_call(DumpCreate::default_service, dumpPath.str.c_str(),
+                            DumpCreate::interface, "CreateDump");
     method.append(
         std::vector<
             std::pair<std::string, std::variant<std::string, uint64_t>>>());
@@ -252,16 +252,11 @@ void createBmcDump(sdbusplus::bus_t& bus [[maybe_unused]])
 
 bool checkACLoss(size_t& chassisId)
 {
-    std::string chassisLostPowerFileFmt = std::format(CHASSIS_LOST_POWER_FILE,
-                                                      chassisId);
+    std::string chassisLostPowerFileFmt =
+        std::format(CHASSIS_LOST_POWER_FILE, chassisId);
 
     std::filesystem::path chassisPowerLossFile{chassisLostPowerFileFmt};
-    if (std::filesystem::exists(chassisPowerLossFile))
-    {
-        return true;
-    }
-
-    return false;
+    return std::filesystem::exists(chassisPowerLossFile);
 }
 
 bool isBmcReady(sdbusplus::bus_t& bus)
@@ -270,8 +265,8 @@ bool isBmcReady(sdbusplus::bus_t& bus)
     auto bmcPath = sdbusplus::message::object_path(BMC::namespace_path::value) /
                    BMC::namespace_path::bmc;
 
-    auto bmcState = getProperty(bus, bmcPath.str.c_str(), BMC::interface,
-                                "CurrentBMCState");
+    auto bmcState =
+        getProperty(bus, bmcPath.str, BMC::interface, "CurrentBMCState");
 
     if (sdbusplus::message::convert_from_string<BMC::BMCState>(bmcState) !=
         BMC::BMCState::Ready)

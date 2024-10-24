@@ -20,7 +20,7 @@ void dump_targets(const TargetErrorData& targetData)
     {
         std::cout << target << " " << value.errorToLog << std::endl;
         std::cout << "    ";
-        for (auto& eToMonitor : value.errorsToMonitor)
+        for (const auto& eToMonitor : value.errorsToMonitor)
         {
             std::cout << eToMonitor << ", ";
         }
@@ -82,8 +82,8 @@ int main(int argc, char* argv[])
         dump_targets(targetData);
     }
 
-    phosphor::state::manager::SystemdTargetLogging targetMon(targetData,
-                                                             serviceData, bus);
+    phosphor::state::manager::SystemdTargetLogging targetMon(
+        targetData, serviceData, bus);
 
     // Subscribe to systemd D-bus signals indicating target completions
     targetMon.subscribeToSystemdSignals();

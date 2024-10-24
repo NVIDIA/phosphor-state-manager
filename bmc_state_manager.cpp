@@ -165,7 +165,9 @@ bool BMC::executeTransition(const Transition tranReq)
         // Check to make sure it can be found
         auto iter = SYSTEMD_TABLE.find(tranReq);
         if (iter == SYSTEMD_TABLE.end())
+        {
             return false;
+        }
 
         const auto& sysdUnit = iter->second;
 
@@ -298,7 +300,7 @@ void BMC::discoverLastRebootCause()
 {
     uint64_t bootReason = 0;
     std::ifstream file;
-    auto bootstatusPath = "/sys/class/watchdog/watchdog0/bootstatus";
+    const auto* bootstatusPath = "/sys/class/watchdog/watchdog0/bootstatus";
 
     file.exceptions(std::ifstream::failbit | std::ifstream::badbit |
                     std::ifstream::eofbit);
@@ -318,13 +320,13 @@ void BMC::discoverLastRebootCause()
     switch (bootReason)
     {
         case WDIOF_EXTERN1:
-            this->lastRebootCause(RebootCause::Watchdog);
+            this->lastRebootCause(RebootCause::Software);
             return;
         case WDIOF_CARDRESET:
-            this->lastRebootCause(RebootCause::POR);
+            this->lastRebootCause(RebootCause::Watchdog);
             return;
         default:
-            this->lastRebootCause(RebootCause::Unknown);
+            this->lastRebootCause(RebootCause::POR);
             // Continue below to see if more details can be found
             // on reason for reboot
             break;

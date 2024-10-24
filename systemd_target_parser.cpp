@@ -19,8 +19,8 @@ void validateErrorsToMonitor(std::vector<std::string>& errorsToMonitor)
         }
     }
     // See if default was in the errors to monitor, if so replace with defaults
-    auto errorItr = std::find(errorsToMonitor.begin(), errorsToMonitor.end(),
-                              "default");
+    auto errorItr =
+        std::find(errorsToMonitor.begin(), errorsToMonitor.end(), "default");
     if (errorItr != errorsToMonitor.end())
     {
         // Verify default is the only entry
@@ -31,9 +31,9 @@ void validateErrorsToMonitor(std::vector<std::string>& errorsToMonitor)
         }
         // delete "default" and insert defaults
         errorsToMonitor.erase(errorItr);
-        errorsToMonitor.push_back("timeout");
-        errorsToMonitor.push_back("failed");
-        errorsToMonitor.push_back("dependency");
+        errorsToMonitor.emplace_back("timeout");
+        errorsToMonitor.emplace_back("failed");
+        errorsToMonitor.emplace_back("dependency");
     }
 }
 

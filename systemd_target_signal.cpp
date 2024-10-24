@@ -54,9 +54,9 @@ void SystemdTargetLogging::logError(const std::string& errorLog,
                                     const std::string& result,
                                     const std::string& unit)
 {
-    auto method = this->bus.new_method_call(LoggingCreate::default_service,
-                                            LoggingCreate::instance_path,
-                                            LoggingCreate::interface, "Create");
+    auto method = this->bus.new_method_call(
+        LoggingCreate::default_service, LoggingCreate::instance_path,
+        LoggingCreate::interface, "Create");
     // Signature is ssa{ss}
     method.append(
         errorLog, LoggingEntry::Level::Critical,
@@ -75,16 +75,16 @@ void SystemdTargetLogging::logError(const std::string& errorLog,
     }
 }
 
-const std::string SystemdTargetLogging::processError(const std::string& unit,
-                                                     const std::string& result)
+std::string SystemdTargetLogging::processError(const std::string& unit,
+                                               const std::string& result)
 {
     auto targetEntry = this->targetData.find(unit);
     if (targetEntry != this->targetData.end())
     {
         // Check if its result matches any of our monitored errors
         if (std::find(targetEntry->second.errorsToMonitor.begin(),
-                      targetEntry->second.errorsToMonitor.end(),
-                      result) != targetEntry->second.errorsToMonitor.end())
+                      targetEntry->second.errorsToMonitor.end(), result) !=
+            targetEntry->second.errorsToMonitor.end())
         {
             error(
                 "Monitored systemd unit has hit an error, unit:{UNIT}, result:{RESULT}",

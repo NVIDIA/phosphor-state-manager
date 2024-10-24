@@ -31,8 +31,7 @@ class SystemdTargetLogging
     SystemdTargetLogging(const TargetErrorData& targetData,
                          const ServiceMonitorData& serviceData,
                          sdbusplus::bus_t& bus) :
-        targetData(targetData),
-        serviceData(serviceData), bus(bus),
+        targetData(targetData), serviceData(serviceData), bus(bus),
         systemdJobRemovedSignal(
             bus,
             sdbusplus::bus::match::rules::type::signal() +
@@ -65,8 +64,8 @@ class SystemdTargetLogging
      *
      * @return valid pointer to error to log, otherwise nullptr
      */
-    const std::string processError(const std::string& unit,
-                                   const std::string& result);
+    std::string processError(const std::string& unit,
+                             const std::string& result);
 
   private:
     /** @brief Start BMC Quiesce Target to indicate critical service failure */

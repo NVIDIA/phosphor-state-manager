@@ -10,6 +10,9 @@
 #include <exception>
 #include <filesystem>
 
+using ScheduledHostTransition =
+    sdbusplus::server::xyz::openbmc_project::state::ScheduledHostTransition;
+
 int main(int argc, char** argv)
 {
     size_t hostId = 0;
@@ -17,8 +20,8 @@ int main(int argc, char** argv)
     int arg;
     int optIndex = 0;
 
-    static struct option longOpts[] = {{"host", required_argument, 0, 'h'},
-                                       {0, 0, 0, 0}};
+    static struct option longOpts[] = {
+        {"host", required_argument, nullptr, 'h'}, {nullptr, 0, nullptr, 0}};
 
     while ((arg = getopt_long(argc, argv, "h:", longOpts, &optIndex)) != -1)
     {
@@ -60,10 +63,10 @@ int main(int argc, char** argv)
     // input id is 0.
     if (hostId == 0)
     {
-        bus.request_name(SCHEDULED_HOST_TRANSITION_BUSNAME);
+        bus.request_name(ScheduledHostTransition::interface);
     }
 
-    bus.request_name((std::string{SCHEDULED_HOST_TRANSITION_BUSNAME} +
+    bus.request_name((std::string{ScheduledHostTransition::interface} +
                       std::to_string(hostId))
                          .c_str());
 
