@@ -122,14 +122,14 @@ class StateMachineHandler
         stateProperty(stateProperty), defaultState(defaultState),
         errorState(errorState), objPathCreated(objPathCreated), states(states)
     {}
-    virtual ~StateMachineHandler() {}
+    virtual ~StateMachineHandler() = default;
 
     std::vector<std::unique_ptr<sdbusplus::bus::match::match>>
         eventHandlerMatcher;
 
     void executeTransition();
-    bool any(const std::vector<bool>& bool_vector);
-    bool all(const std::vector<bool>& bool_vector);
+    static bool any(const std::vector<bool>& bool_vector);
+    static bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
                                   const std::string& val) = 0;
 };
@@ -137,8 +137,9 @@ class StateMachineHandler
 class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
 {
   public:
-    PropertiesVariant getPropertyValue(const std::string& stateProperty,
-                                       const std::string& propertyValueString)
+    static PropertiesVariant
+        getPropertyValue(const std::string& stateProperty,
+                         const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -151,7 +152,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
     }
 
     void setPropertyValue(const std::string& stateProperty,
-                          const std::string& val)
+                          const std::string& val) override
     {
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
@@ -269,8 +270,9 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
 class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
 {
   public:
-    PropertiesVariant getPropertyValue(const std::string& stateProperty,
-                                       const std::string& propertyValueString)
+    static PropertiesVariant
+        getPropertyValue(const std::string& stateProperty,
+                         const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -283,7 +285,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
     }
 
     void setPropertyValue(const std::string& stateProperty,
-                          const std::string& val)
+                          const std::string& val) override
     {
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
@@ -401,8 +403,9 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
 class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
 {
   public:
-    PropertiesVariant getPropertyValue(const std::string& stateProperty,
-                                       const std::string& propertyValueString)
+    static PropertiesVariant
+        getPropertyValue(const std::string& stateProperty,
+                         const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -415,7 +418,7 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
     }
 
     void setPropertyValue(const std::string& stateProperty,
-                          const std::string& val)
+                          const std::string& val) override
     {
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
@@ -533,8 +536,9 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
 class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
 {
   public:
-    PropertiesVariant getPropertyValue(const std::string& stateProperty,
-                                       const std::string& propertyValueString)
+    static PropertiesVariant
+        getPropertyValue(const std::string& stateProperty,
+                         const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -547,7 +551,7 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
     }
 
     void setPropertyValue(const std::string& stateProperty,
-                          const std::string& val)
+                          const std::string& val) override
     {
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
@@ -665,13 +669,14 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
 class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
 {
   public:
-    PropertiesVariant getPropertyValue(const std::string& propertyValueString)
+    static PropertiesVariant
+        getPropertyValue(const std::string& propertyValueString)
     {
         return convertPowerStateFromString(propertyValueString);
     }
 
     void setPropertyValue(const std::string& stateProperty,
-                          const std::string& val)
+                          const std::string& val) override
     {
         setPropertyByName(stateProperty, getPropertyValue(val));
         // update local cache also
@@ -793,12 +798,12 @@ class ConfigurableStateManager
 {
   public:
     // Constructor
-    ConfigurableStateManager() {}
+    ConfigurableStateManager() = default;
     // Destructor
-    ~ConfigurableStateManager() {}
+    ~ConfigurableStateManager() = default;
 
     /** @brief Parse JSON file  */
-    Json parseConfigFile(const std::string& configFile);
+    static Json parseConfigFile(const std::string& configFile);
 
     // Declare vectors to hold the different entity objects
     std::vector<std::unique_ptr<CategoryFeatureReady>> featureEntities;

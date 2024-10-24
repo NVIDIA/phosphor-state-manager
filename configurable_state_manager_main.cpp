@@ -171,11 +171,11 @@ void StateMachineHandler::executeTransition()
                 }
             }
 
-            if (condition.logic.compare("AND") == 0)
+            if (condition.logic == "AND")
             {
                 evalConditions.push_back(all(evalConditionLoop));
             }
-            else if (condition.logic.compare("OR") == 0)
+            else if (condition.logic == "OR")
             {
                 evalConditions.push_back(any(evalConditionLoop));
             }
@@ -198,11 +198,11 @@ void StateMachineHandler::executeTransition()
         // final evaluation of all condition boolean results for a particular
         // state value
         bool stateConditionsResult = false;
-        if (stateValueTransition.logic.compare("AND") == 0)
+        if (stateValueTransition.logic == "AND")
         {
             stateConditionsResult = all(evalConditions);
         }
-        else if (stateValueTransition.logic.compare("OR") == 0)
+        else if (stateValueTransition.logic == "OR")
         {
             stateConditionsResult = any(evalConditions);
         }
@@ -289,7 +289,8 @@ int main()
     for (const auto& jsonFilePath : jsonFiles)
     {
         const std::string& configFile = jsonFilePath;
-        Json data = manager.parseConfigFile(configFile);
+        Json data = configurable_state_manager::ConfigurableStateManager::
+            parseConfigFile(configFile);
         if (data.is_null() || data.is_discarded())
         {
             continue;
@@ -318,13 +319,13 @@ int main()
             {
                 extractedString = featureType;
             }
-            objToBeAdded = objToBeAdded + extractedString;
+            objToBeAdded += extractedString;
 
             std::unordered_map<std::string, std::vector<std::string>>
                 servicesToBeMonitored = data["ServicesToBeMonitored"];
             std::string stateProperty = data["State"]["State_property"];
             std::string defaultState = data["State"]["Default"];
-            std::string errorState = "";
+            std::string errorState;
 
             std::vector<configurable_state_manager::State> states;
             // Extract states from JSON
@@ -359,55 +360,55 @@ int main()
                 errorState =
                     "xyz.openbmc_project.State.FeatureReady.States.Unknown";
                 manager.featureEntities.push_back(
-                    std::move(std::make_unique<
-                              configurable_state_manager::CategoryFeatureReady>(
+                    std::make_unique<
+                        configurable_state_manager::CategoryFeatureReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
                         servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        errorState, states));
             }
             else if (interfaceName.find("DeviceReady") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.DeviceReady.States.Unknown";
                 manager.deviceEntities.push_back(
-                    std::move(std::make_unique<
-                              configurable_state_manager::CategoryDeviceReady>(
+                    std::make_unique<
+                        configurable_state_manager::CategoryDeviceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
                         servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        errorState, states));
             }
             else if (interfaceName.find("InterfaceReady") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.InterfaceReady.States.Unknown";
-                manager.interfaceEntities.push_back(std::move(
+                manager.interfaceEntities.push_back(
                     std::make_unique<
                         configurable_state_manager::CategoryInterfaceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
                         servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        errorState, states));
             }
             else if (interfaceName.find("ServiceReady") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.ServiceReady.States.Unknown";
                 manager.serviceEntities.push_back(
-                    std::move(std::make_unique<
-                              configurable_state_manager::CategoryServiceReady>(
+                    std::make_unique<
+                        configurable_state_manager::CategoryServiceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
                         servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        errorState, states));
             }
             else if (interfaceName.find("State.Chassis") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.Chassis.PowerState.Unknown";
-                manager.powerEntities.push_back(std::move(
+                manager.powerEntities.push_back(
                     std::make_unique<
                         configurable_state_manager::CategoryChassisPowerReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
                         servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        errorState, states));
             }
         }
         catch (std::exception& e)
