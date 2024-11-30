@@ -128,6 +128,10 @@ class StateMachineHandler
         eventHandlerMatcher;
 
     void executeTransition();
+    phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(sdbusplus::bus::bus& bus,
+                                               const std::string& objectPath,
+                                               const std::string& interface,
+                                               const std::string& property);
     bool any(const std::vector<bool>& bool_vector);
     bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
@@ -205,10 +209,10 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                         // Execute the transition when properties change
                         executeTransition();
                         // for logging
-                        std::string objectPathSender = msg.get_sender();
                         log<level::INFO>(
-                            "Object path which calle this",
-                            entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                        (boost::format(
+                             "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                            .str().c_str());
                     }
                     catch (const sdbusplus::exception::SdBusError& e)
                     {
@@ -245,15 +249,15 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                             // Execute the transition when properties change
                             executeTransition();
                             // for logging
-                            std::string objectPathSender = msg.get_sender();
                             log<level::INFO>(
-                                "Object path which called this",
-                                entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                            (boost::format(
+                                "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                                .str().c_str());
                         }
                         catch (const sdbusplus::exception::SdBusError& e)
                         {
                             log<level::ERR>(
-                                "Unable to execute Transiton for    interface added matchPtr",
+                                "Unable to execute Transiton for interface added matchPtr",
                                 entry("ERR=%s msg=", e.what()));
                         }
                     }
@@ -337,10 +341,10 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                         // Execute the transition when properties change
                         executeTransition();
                         // for logging
-                        std::string objectPathSender = msg.get_sender();
-                        log<level::INFO>(
-                            "Object path which calle this",
-                            entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                         log<level::INFO>(
+                        (boost::format(
+                             "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                            .str().c_str());
                     }
                     catch (const sdbusplus::exception::SdBusError& e)
                     {
@@ -377,10 +381,10 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                             // Execute the transition when properties change
                             executeTransition();
                             // for logging
-                            std::string objectPathSender = msg.get_sender();
                             log<level::INFO>(
-                                "Object path which called this",
-                                entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                            (boost::format(
+                                "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                                .str().c_str());
                         }
                         catch (const sdbusplus::exception::SdBusError& e)
                         {
@@ -469,10 +473,10 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                         // Execute the transition when properties change
                         executeTransition();
                         // for logging
-                        std::string objectPathSender = msg.get_sender();
-                        log<level::INFO>(
-                            "Object path which calle this",
-                            entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                         log<level::INFO>(
+                        (boost::format(
+                             "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                            .str().c_str());
                     }
                     catch (const sdbusplus::exception::SdBusError& e)
                     {
@@ -509,10 +513,10 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                             // Execute the transition when properties change
                             executeTransition();
                             // for logging
-                            std::string objectPathSender = msg.get_sender();
                             log<level::INFO>(
-                                "Object path which called this",
-                                entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                            (boost::format(
+                                "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                                .str().c_str());
                         }
                         catch (const sdbusplus::exception::SdBusError& e)
                         {
@@ -601,10 +605,10 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                         // Execute the transition when properties change
                         executeTransition();
                         // for logging
-                        std::string objectPathSender = msg.get_sender();
-                        log<level::INFO>(
-                            "Object path which calle this",
-                            entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                         log<level::INFO>(
+                        (boost::format(
+                             "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                            .str().c_str());
                     }
                     catch (const sdbusplus::exception::SdBusError& e)
                     {
@@ -641,10 +645,10 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                             // Execute the transition when properties change
                             executeTransition();
                             // for logging
-                            std::string objectPathSender = msg.get_sender();
                             log<level::INFO>(
-                                "Object path which called this",
-                                entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                            (boost::format(
+                                "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                                .str().c_str());
                         }
                         catch (const sdbusplus::exception::SdBusError& e)
                         {
@@ -726,10 +730,10 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                         // Execute the transition when properties change
                         executeTransition();
                         // for logging
-                        std::string objectPathSender = msg.get_sender();
-                        log<level::INFO>(
-                            "Object path which calle this",
-                            entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                         log<level::INFO>(
+                        (boost::format(
+                             "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                            .str().c_str());
                     }
                     catch (const sdbusplus::exception::SdBusError& e)
                     {
@@ -768,10 +772,10 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                             // Execute the transition when properties change
                             executeTransition();
                             // for logging
-                            std::string objectPathSender = msg.get_sender();
                             log<level::INFO>(
-                                "Object path which called this",
-                                entry("OBJ_NAME=%s", objectPathSender.c_str()));
+                            (boost::format(
+                                "Property change triggered state transition, Sender: '%s'") % msg.get_sender())
+                                .str().c_str());
                         }
                         catch (const sdbusplus::exception::SdBusError& e)
                         {
