@@ -26,12 +26,16 @@
 #include <sdbusplus/asio/object_server.hpp> // Include the asio/object_server header
 #include <sdbusplus/asio/property.hpp>      // Include the asio/property header
 #include <sdbusplus/bus.hpp>
+#include <sdbusplus/exception.hpp>
 #include <sdbusplus/server.hpp>
 #include <sdbusplus/server/manager.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -40,6 +44,77 @@ using namespace phosphor::logging;
 
 namespace configurable_state_manager
 {
+
+using namespace phosphor::logging;
+
+phosphor::state::manager::utils::PropertyValue
+    StateMachineHandler::handleTimeoutRetries(sdbusplus::bus::bus& bus,
+                                              const std::string& objectPath,
+                                              const std::string& interface,
+                                              const std::string& property)
+{
+    constexpr int maxRetries = 4; // Maximum number of retries
+    int retryCount = 0;           // Track retry attempts
+
+    while (retryCount < maxRetries)
+    {
+        try
+        {
+            // Attempt to fetch the property
+            auto propertyValue = phosphor::state::manager::utils::getPropertyV2(
+                bus, objectPath, interface, property);
+
+            // Log success and return the retrieved value
+            log<level::INFO>(
+                (boost::format(
+                     "Successfully retrieved property '%s' from object '%s', interface '%s' on retry attempt %d.") %
+                 property % objectPath % interface % (retryCount + 1))
+                    .str()
+                    .c_str());
+            return propertyValue;
+        }
+        catch (const sdbusplus::exception::SdBusError& e)
+        {
+            if (std::string(e.name()) == "org.freedesktop.DBus.Error.Timeout")
+            {
+                log<level::WARNING>(
+                    (boost::format(
+                         "Timeout occurred while fetching property '%s' from object '%s', interface '%s'. Retry %d/%d.") %
+                     property % objectPath % interface % (retryCount + 1) %
+                     maxRetries)
+                        .str()
+                        .c_str());
+            }
+            else
+            {
+                log<level::ERR>(
+                    (boost::format(
+                         "Unexpected error while fetching property '%s' from object '%s', interface '%s': %s.") %
+                     property % objectPath % interface % e.what())
+                        .str()
+                        .c_str());
+                throw; // Rethrow the exception for non-timeout errors
+            }
+        }
+
+        // Increment retry count and wait before the next attempt
+        ++retryCount;
+    }
+
+    // If all retries fail, throw an exception
+    log<level::ERR>(
+        (boost::format(
+             "Failed to retrieve property '%s' from object '%s', interface '%s' after %d attempts. Throwing exception.") %
+         property % objectPath % interface % maxRetries)
+            .str()
+            .c_str());
+
+    throw std::runtime_error(
+        (boost::format(
+             "Unable to retrieve property '%s' from object '%s', interface '%s' after %d attempts.") %
+         property % objectPath % interface % maxRetries)
+            .str());
+}
 
 bool StateMachineHandler::any(const std::vector<bool>& bool_vector)
 {
@@ -118,16 +193,16 @@ void StateMachineHandler::executeTransition()
                     }
                     else
                     {
-                        tmp = phosphor::state::manager::utils::getPropertyV2(
-                            bus, objectPath, condition.intf,
-                            condition.property);
+                        tmp = handleTimeoutRetries(bus, objectPath,
+                                                   condition.intf,
+                                                   condition.property);
                     }
                 }
                 catch (const std::exception& e)
                 {
                     auto errStrPath =
                         (boost::format(
-                             "Got error with getProperty() for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s, hence setting state as default state") %
+                             "Got error with getProperty() with multiple tries for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s, hence setting state as default state") %
                          objectPath % condition.intf % condition.property %
                          e.what())
                             .str();
