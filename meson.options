@@ -124,6 +124,16 @@ option('force-warm-reboot', type : 'feature',
     description : 'Enable forced warm reboots of the system',
 )
 
+option('graceful-warm-reboot', type : 'feature',
+    value : 'enabled',
+    description : 'Enable graceful warm reboots of the system',
+)
+
+option('graceful-shutdown', type : 'feature',
+    value : 'enabled',
+    description : 'Enable graceful shutdown of the system',
+)
+
 option('host-gpios', type : 'feature',
     value : 'enabled',
     description : 'Enable gpio mechanism to check host state.',

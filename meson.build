@@ -110,6 +110,14 @@ if(get_option('force-warm-reboot').allowed())
     add_project_arguments('-DENABLE_FORCE_WARM_REBOOT',language:'cpp')
 endif
 
+if(get_option('graceful-warm-reboot').allowed())
+    add_project_arguments('-DENABLE_GRACEFUL_WARM_REBOOT',language:'cpp')
+endif
+
+if(get_option('graceful-shutdown').allowed())
+    add_project_arguments('-DENABLE_GRACEFUL_SHUTDOWN',language:'cpp')
+endif
+
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')

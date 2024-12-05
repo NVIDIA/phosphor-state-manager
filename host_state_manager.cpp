@@ -90,9 +90,13 @@ void Host::setupSupportedTransitions()
 {
     std::set<Transition> supportedTransitions = {
         Transition::On,
+#if ENABLE_GRACEFUL_SHUTDOWN
         Transition::Off,
+#endif
         Transition::Reboot,
+#if ENABLE_GRACEFUL_WARM_REBOOT
         Transition::GracefulWarmReboot,
+#endif
 #if ENABLE_FORCE_WARM_REBOOT
         Transition::ForceWarmReboot,
 #endif
@@ -420,6 +424,30 @@ Host::Transition Host::requestedHostTransition(Transition value)
         info("BMC State is not Ready so no host on operations allowed");
         throw sdbusplus::xyz::openbmc_project::State::Host::Error::
             BMCNotReady();
+    }
+#endif
+
+#if !ENABLE_GRACEFUL_WARM_REBOOT
+    if (value == Transition::GracefulWarmReboot)
+    {
+        info(" '{TRANSITION}' is not supported", "TRANSITION", value);
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
+    }
+#endif
+
+#if !ENABLE_FORCE_WARM_REBOOT
+    if (value == Transition::ForceWarmReboot)
+    {
+        info(" '{TRANSITION}' is not supported", "TRANSITION", value);
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
+    }
+#endif
+
+#if !ENABLE_GRACEFUL_SHUTDOWN
+    if (value == Transition::Off)
+    {
+        info(" '{TRANSITION}' is not supported", "TRANSITION", value);
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
     }
 #endif
 
