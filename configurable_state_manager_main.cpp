@@ -235,6 +235,14 @@ void StateMachineHandler::executeTransition()
                     reqValue = "Unsupported Type";
                 }
 
+                log<level::INFO>(
+                    (boost::format(
+                         "Parsed property '%s' from object '%s', interface '%s' with value: %s") %
+                     condition.property % objectPath % condition.intf %
+                     reqValue)
+                        .str()
+                        .c_str());
+
                 int res = condition.value.compare(reqValue);
                 if (res == 0)
                 {

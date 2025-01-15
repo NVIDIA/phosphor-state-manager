@@ -176,20 +176,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
         // populate type
         setPropertyValue("FeatureType", featureType);
 
-        try
-        {
-            // execute transition logic at startup
-            // init for the category
-            executeTransition();
-        }
-        catch (const std::exception& e)
-        {
-            auto errStrPath =
-                (boost::format("CategoryFeatureReady : [E]:%s") % e.what())
-                    .str();
-            log<level::ERR>(errStrPath.c_str());
-        }
-
+        // Register signal handlers before executing initial transition
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
             const std::string ifaceName = interfaceEntry.first;
@@ -270,6 +257,21 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                 eventHandlerMatcher.push_back(std::move(matchPtr2));
             }
         }
+
+        // kind of scan if csm comes after any signal is recieved
+        try
+        {
+            // execute transition logic at startup
+            // init for the category
+            executeTransition();
+        }
+        catch (const std::exception& e)
+        {
+            auto errStrPath =
+                (boost::format("CategoryFeatureReady : [E]:%s") % e.what())
+                    .str();
+            log<level::ERR>(errStrPath.c_str());
+        }
     }
 };
 
@@ -312,20 +314,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
         // populate type
         setPropertyValue("ServiceType", featureType);
 
-        try
-        {
-            // execute transition logic at startup
-            // init for the category
-            executeTransition();
-        }
-        catch (const std::exception& e)
-        {
-            auto errStrPath =
-                (boost::format("CategoryServiceReady : [E]:%s") % e.what())
-                    .str();
-            log<level::ERR>(errStrPath.c_str());
-        }
-
+        // Register signal handlers before executing initial transition
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
             const std::string ifaceName = interfaceEntry.first;
@@ -405,6 +394,21 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                 // insert interface added matchPtr
                 eventHandlerMatcher.push_back(std::move(matchPtr2));
             }
+        }
+
+        // kind of scan if csm comes after any signal is recieved
+        try
+        {
+            // execute transition logic at startup
+            // init for the category
+            executeTransition();
+        }
+        catch (const std::exception& e)
+        {
+            auto errStrPath =
+                (boost::format("CategoryServiceReady : [E]:%s") % e.what())
+                    .str();
+            log<level::ERR>(errStrPath.c_str());
         }
     }
 };
@@ -448,20 +452,7 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
         // populate type
         setPropertyValue("InterfaceType", featureType);
 
-        try
-        {
-            // execute transition logic at startup
-            // init for the category
-            executeTransition();
-        }
-        catch (const std::exception& e)
-        {
-            auto errStrPath =
-                (boost::format("CategoryInterfaceReady : [E]:%s") % e.what())
-                    .str();
-            log<level::ERR>(errStrPath.c_str());
-        }
-
+        // Register signal handlers before executing initial transition
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
             const std::string ifaceName = interfaceEntry.first;
@@ -541,6 +532,21 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                 // insert interface added matchPtr
                 eventHandlerMatcher.push_back(std::move(matchPtr2));
             }
+        }
+
+        // kind of scan if csm comes after any signal is recieved
+        try
+        {
+            // execute transition logic at startup
+            // init for the category
+            executeTransition();
+        }
+        catch (const std::exception& e)
+        {
+            auto errStrPath =
+                (boost::format("CategoryInterfaceReady : [E]:%s") % e.what())
+                    .str();
+            log<level::ERR>(errStrPath.c_str());
         }
     }
 };
@@ -584,20 +590,7 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
         // populate type
         setPropertyValue("DeviceType", featureType);
 
-        try
-        {
-            // execute transition logic at startup
-            // init for the category
-            executeTransition();
-        }
-        catch (const std::exception& e)
-        {
-            auto errStrPath =
-                (boost::format("CategoryDeviceReady : [E]:%s") % e.what())
-                    .str();
-            log<level::ERR>(errStrPath.c_str());
-        }
-
+        // Register signal handlers before executing initial transition
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
             const std::string ifaceName = interfaceEntry.first;
@@ -678,6 +671,21 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                 eventHandlerMatcher.push_back(std::move(matchPtr2));
             }
         }
+
+        // kind of scan if csm comes after any signal is recieved
+        try
+        {
+            // execute transition logic at startup
+            // init for the category
+            executeTransition();
+        }
+        catch (const std::exception& e)
+        {
+            auto errStrPath =
+                (boost::format("CategoryDeviceReady : [E]:%s") % e.what())
+                    .str();
+            log<level::ERR>(errStrPath.c_str());
+        }
     }
 };
 
@@ -712,20 +720,7 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
         // populate default value of state
         setPropertyValue(stateProperty, defaultState);
 
-        try
-        {
-            // execute transition logic at startup
-            // init for the category
-            executeTransition();
-        }
-        catch (const std::exception& e)
-        {
-            auto errStrPath =
-                (boost::format("CategoryChassisPowerReady : [E]:%s") % e.what())
-                    .str();
-            log<level::ERR>(errStrPath.c_str());
-        }
-
+        // Register signal handlers before executing initial transition
         for (const auto& interfaceEntry : servicesToBeMonitored)
         {
             const std::string ifaceName = interfaceEntry.first;
@@ -808,6 +803,21 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                 // insert interfacesAdded matchPtr
                 eventHandlerMatcher.push_back(std::move(matchPtr2));
             }
+        }
+
+        // kind of scan if csm comes after any signal is recieved
+        try
+        {
+            // execute transition logic at startup
+            // init for the category
+            executeTransition();
+        }
+        catch (const std::exception& e)
+        {
+            auto errStrPath =
+                (boost::format("CategoryChassisPowerReady : [E]:%s") % e.what())
+                    .str();
+            log<level::ERR>(errStrPath.c_str());
         }
     }
 };
