@@ -448,6 +448,12 @@ Host::Transition Host::requestedHostTransition(Transition value)
     {
         transitionStr = "GracefulWarmReboot";
     }
+#if ENABLE_FORCE_WARM_REBOOT
+    else if (value == Transition::ForceWarmReboot)
+    {
+        transitionStr = "ForceWarmReboot";
+    }
+#endif
     else
     {
         transitionStr = "Unknown";
