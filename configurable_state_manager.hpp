@@ -128,11 +128,11 @@ class StateMachineHandler
         eventHandlerMatcher;
 
     void executeTransition();
-    phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
+    static phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
         sdbusplus::bus::bus& bus, const std::string& objectPath,
         const std::string& interface, const std::string& property);
-    bool any(const std::vector<bool>& bool_vector);
-    bool all(const std::vector<bool>& bool_vector);
+    static bool any(const std::vector<bool>& bool_vector);
+    static bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
                                   const std::string& val) = 0;
 };
