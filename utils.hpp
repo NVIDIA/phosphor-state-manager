@@ -107,12 +107,13 @@ PropertyValue getPropertyV2(sdbusplus::bus::bus& bus, const std::string& path,
  */
 bool isBmcReady(sdbusplus::bus_t& bus);
 
-/** @brief Wait BMC to enter ready state or timeout reached.
+/** @brief Wait for power restore delay and check for BMC_READY.
  *
  * @param[in] bus          - The Dbus bus object
  * @param[in] timeout      - Timeout in second
  */
-bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout);
+bool waitForPowerDelayRestore(sdbusplus::bus_t& bus,
+                              std::chrono::seconds timeout);
 
 } // namespace utils
 } // namespace manager
