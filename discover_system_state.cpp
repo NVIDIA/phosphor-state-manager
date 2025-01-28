@@ -170,7 +170,7 @@ int main(int argc, char** argv)
         if (RestorePolicy::Policy::AlwaysOn ==
             RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            utils::waitBmcReady(bus, powerRestoreDelaySec);
+            utils::waitForPowerDelayRestore(bus, powerRestoreDelaySec);
             // In case no value of restart cause was saved, set to
             // PowerPolicyAlwaysOn
             if (server::Host::convertRestartCauseFromString(
@@ -205,7 +205,7 @@ int main(int argc, char** argv)
             info(
                 "power_policy=ALWAYS_POWER_OFF, set requested state to off ({DELAY}s delay)",
                 "DELAY", powerRestoreDelaySec.count());
-            utils::waitBmcReady(bus, powerRestoreDelaySec);
+            utils::waitForPowerDelayRestore(bus, powerRestoreDelaySec);
             // Read last requested state and re-request it to execute it
             auto hostReqState = phosphor::state::manager::utils::getProperty(
                 bus, hostPath, HOST_BUSNAME, "RequestedHostTransition");
@@ -220,7 +220,7 @@ int main(int argc, char** argv)
         else if (RestorePolicy::Policy::Restore ==
                  RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            utils::waitBmcReady(bus, powerRestoreDelaySec);
+            utils::waitForPowerDelayRestore(bus, powerRestoreDelaySec);
             // In case no value of restart cause was saved, set to
             // PowerPolicyPreviousState
             if (server::Host::convertRestartCauseFromString(
