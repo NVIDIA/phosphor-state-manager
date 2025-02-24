@@ -36,12 +36,21 @@ constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 PropertyValue getPropertyV2(sdbusplus::bus::bus& bus,
                             const std::string& objectPath,
                             const std::string& interface,
-                            const std::string& propertyName)
+                            const std::string& propertyName,
+                            const std::string& sysService)
 {
     static auto newBus = sdbusplus::bus::new_default();
     PropertyValue value{};
 
-    auto service = getService(bus, objectPath, interface);
+    std::string service;
+    if (sysService.empty())
+    {
+        service = getService(bus, objectPath, interface);
+    }
+    else
+    {
+        service = sysService;
+    }
 
     if (service.empty())
     {

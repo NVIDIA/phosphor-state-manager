@@ -20,6 +20,7 @@
 #include "utils.hpp"
 
 #include <boost/format.hpp>
+#include <boost/process.hpp>
 #include <nlohmann/json.hpp>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp> // Include the asio/connection header
@@ -61,8 +62,19 @@ phosphor::state::manager::utils::PropertyValue
         try
         {
             // Attempt to fetch the property
-            auto propertyValue = phosphor::state::manager::utils::getPropertyV2(
-                bus, objectPath, interface, property);
+            phosphor::state::manager::utils::PropertyValue propertyValue;
+            if (serviceMap.count(interface) &&
+                serviceMap[interface].count(objectPath))
+            {
+                propertyValue = phosphor::state::manager::utils::getPropertyV2(
+                    bus, objectPath, interface, property,
+                    serviceMap[interface][objectPath]);
+            }
+            else
+            {
+                propertyValue = phosphor::state::manager::utils::getPropertyV2(
+                    bus, objectPath, interface, property);
+            }
 
             // Log success and return the retrieved value
             log<level::INFO>(
@@ -165,9 +177,17 @@ void StateMachineHandler::executeTransition()
                 try
                 {
                     // find the service name containing object, intf
-                    std::string service =
-                        phosphor::state::manager::utils::getService(
+                    std::string service;
+                    if (serviceMap.count(condition.intf) &&
+                        serviceMap[condition.intf].count(objectPath))
+                    {
+                        service = serviceMap[condition.intf][objectPath];
+                    }
+                    else
+                    {
+                        service = phosphor::state::manager::utils::getService(
                             bus, objectPath, condition.intf);
+                    }
 
                     // if service is empty set unknown state and return
                     if (service.empty())
@@ -302,11 +322,32 @@ void StateMachineHandler::executeTransition()
         }
 
         // if evaluation is true we set the property and return
-        if (stateConditionsResult)
+        if (stateConditionsResult && getCurrState() != stateValue)
         {
             setPropertyValue(stateProperty, stateValue);
+            doActions(stateValueTransition.actions);
             return;
         }
+    }
+}
+
+void StateMachineHandler::doActions(const std::vector<std::string>& actions)
+{
+    try
+    {
+        for (auto action : actions)
+        {
+            log<level::INFO>(
+                (boost::format("Exec action: '%s'") % action.c_str())
+                    .str()
+                    .c_str());
+            boost::process::spawn(action);
+        }
+    }
+    catch (std::exception& e)
+    {
+        log<level::ERR>("Unable to execute Action",
+                        entry("ERR=%s msg=", e.what()));
     }
 }
 
@@ -405,6 +446,13 @@ int main()
 
             std::unordered_map<std::string, std::vector<std::string>>
                 servicesToBeMonitored = data["ServicesToBeMonitored"];
+            std::unordered_map<std::string,
+                               std::unordered_map<std::string, std::string>>
+                serviceMap = data.value(
+                    "ServiceMap",
+                    std::unordered_map<
+                        std::string,
+                        std::unordered_map<std::string, std::string>>{});
             std::string stateProperty = data["State"]["State_property"];
             std::string defaultState = data["State"]["Default"];
             std::string errorState = "";
@@ -433,6 +481,11 @@ int main()
                     condition.logic = conditionEntry.value().value("Logic", "");
                     state.conditions.push_back(condition);
                 }
+
+                // Extract actions
+                state.actions = stateEntry.value().value(
+                    "Actions", std::vector<std::string>());
+
                 // Add the state to the states vector
                 states.push_back(state);
             }
@@ -445,8 +498,8 @@ int main()
                     std::move(std::make_unique<
                               configurable_state_manager::CategoryFeatureReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        servicesToBeMonitored, serviceMap, stateProperty,
+                        defaultState, errorState, states)));
             }
             else if (interfaceName.find("DeviceReady") != std::string::npos)
             {
@@ -456,8 +509,8 @@ int main()
                     std::move(std::make_unique<
                               configurable_state_manager::CategoryDeviceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        servicesToBeMonitored, serviceMap, stateProperty,
+                        defaultState, errorState, states)));
             }
             else if (interfaceName.find("InterfaceReady") != std::string::npos)
             {
@@ -467,8 +520,8 @@ int main()
                     std::make_unique<
                         configurable_state_manager::CategoryInterfaceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        servicesToBeMonitored, serviceMap, stateProperty,
+                        defaultState, errorState, states)));
             }
             else if (interfaceName.find("ServiceReady") != std::string::npos)
             {
@@ -478,8 +531,8 @@ int main()
                     std::move(std::make_unique<
                               configurable_state_manager::CategoryServiceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        servicesToBeMonitored, serviceMap, stateProperty,
+                        defaultState, errorState, states)));
             }
             else if (interfaceName.find("State.Chassis") != std::string::npos)
             {
@@ -489,8 +542,8 @@ int main()
                     std::make_unique<
                         configurable_state_manager::CategoryChassisPowerReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        servicesToBeMonitored, serviceMap, stateProperty,
+                        defaultState, errorState, states)));
             }
         }
         catch (std::exception& e)
