@@ -252,41 +252,6 @@ All the json files are present under path **"/usr/share/configurable-state-manag
         "xyz.openbmc_project.State.ServiceReady": ["/xyz/openbmc_project/GpuMgr", "/xyz/openbmc_project/inventory/metrics/platformmetrics"]
     }
 ```
-
-**ServiceMap (Optional) -** ServiceMap is a nested mapping that defines the relationship between interfaces, object paths, and their corresponding services. While CSM typically uses ObjectMapper to resolve the service for a given (interface, path) pair, systemd-managed services are not registered with ObjectMapper and cannot be located this way.
-
-If a service is explicitly specified in ServiceMap, CSM will prioritize using it instead of querying ObjectMapper.
-
-> **ex:**
-```
-"ServicesToBeMonitored": {
-    "org.freedesktop.systemd1.Service": [
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dpartition_2eservice",
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice"
-    ],
-    "org.freedesktop.systemd1.Unit": [
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dpartition_2eservice",
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice"
-    ]
-},
-"ServiceMap": {
-    "org.freedesktop.systemd1.Service": {
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dpartition_2eservice": "org.freedesktop.systemd1",
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice": "org.freedesktop.systemd1"
-    },
-    "org.freedesktop.systemd1.Unit": {
-        "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dpartition_2eservice": "org.freedesktop.systemd1"
-    }
-}
-```
-In this example, CSM monitors four (interface, path) pairs:
-1.	org.freedesktop.systemd1.Service, /org/freedesktop/systemd1/unit/nvidia_2demmc_2dpartition_2eservice
-2.	org.freedesktop.systemd1.Service, /org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice
-3.	org.freedesktop.systemd1.Unit, /org/freedesktop/systemd1/unit/nvidia_2demmc_2dpartition_2eservice
-4.	org.freedesktop.systemd1.Unit, /org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice
-
-For the first three pairs, ServiceMap explicitly defines their corresponding services (org.freedesktop.systemd1). For the fourth pair, since no mapping is provided, CSM will attempt to resolve the service dynamically using ObjectMapper.
-
 **State -** this key will contain the whole transition logic for the use case 
 > **ex:** "State": { //transition logic }
 
@@ -438,41 +403,6 @@ On similar lines we have ChassisPower.json
 In above json file chassisPower.json, the fields present as keys are all mandatory fields, they must be present otherwise we will get error.
 Consider this json as a basic template to be implemented.
 
-**Actions (Optional) -** The **Actions** field is an optional list that defines a sequence of command calls to be executed when the specified conditions are met. Actions are executed sequentially in the order they appear in the list.
-
-```
-"States": {
-    "xyz.openbmc_project.State.ServiceReady.States.Enabled": {
-        "Conditions": {
-            "org.freedesktop.systemd1.Service": {
-                "Property": "Result",
-                "Value": "success",
-                "Logic": "AND"
-            },
-            "org.freedesktop.systemd1.Unit": {
-                "Property": "SubState",
-                "Value": "exited",
-                "Logic": "AND"
-            }
-        },
-        "Logic": "AND",
-        "Actions": [
-            "/usr/bin/bash -c \"if systemctl status xyz.openbmc_project.Logging.service | grep 'Active:.*(running)' > /dev/null; then systemctl restart xyz.openbmc_project.Logging.service; fi\"",
-            "/usr/bin/bash -c \"if systemctl status nvidia-fdr.service | grep 'Active:.*(running)' > /dev/null; then systemctl restart nvidia-fdr.service; fi\"",
-            "/usr/bin/bash -c \"if systemctl status xyz.openbmc_project.Dump.Manager.service | grep 'Active:.*(running)' > /dev/null; then systemctl restart xyz.openbmc_project.Dump.Manager.service; fi\""
-        ]
-    }
-}
-```
-
-In this example, when the system transitions to the `xyz.openbmc_project.State.ServiceReady.States.Enabled` state (i.e., all conditions are met), the following actions will be triggered sequentially:
-
-1. Restart `xyz.openbmc_project.Logging.service` if it has started
-2. Restart `nvidia-fdr.service` if it has started
-3. Restart `xyz.openbmc_project.Dump.Manager.service` if it has started
-
-If any action fails (throws an exception), the sequence will continue without interruption.
-
 ## Flowchart of CSM
 ```
      +---------------------+
@@ -520,8 +450,7 @@ If any action fails (throws an exception), the sequence will continue without in
      | Extract Interface Name, Feature Type etc.|                                              |                     v (true)                 v (false)             ^
      +------------------------------------------+                                              |                     |                        |                     |
               |                                                                                |        +-------------------------+    +----------------------+     |
-              |                                                                                |        | - set the state value   |    | - log error message  |------   
-              v                                                                                |        | - (option) exec action  |    |                      |
+              v                                                                                |        | - set the state value   |    | - log error message  |------   
      +-----------------------------------------------------------------------------------      |        | - return                |    |                      |
      | Create State Machine Entities                                                     |     |        +-------------------------+    +----------------------+
      | - on object creation set default value and type property                          |     |                                               | 

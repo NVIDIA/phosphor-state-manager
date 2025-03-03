@@ -95,7 +95,6 @@ struct State
     std::string name;
     std::vector<Condition> conditions;
     std::string logic;
-    std::vector<std::string> actions;
 };
 
 class StateMachineHandler
@@ -105,9 +104,6 @@ class StateMachineHandler
     std::string featureType;
     std::unordered_map<std::string, std::vector<std::string>>
         servicesToBeMonitored;
-    std::unordered_map<std::string,
-                       std::unordered_map<std::string, std::string>>
-        serviceMap;
     std::string stateProperty;
     std::string defaultState;
     std::string errorState;
@@ -118,17 +114,13 @@ class StateMachineHandler
         const std::string& interfaceName, const std::string& featureType,
         const std::unordered_map<std::string, std::vector<std::string>>&
             servicesToBeMonitored,
-        const std::unordered_map<std::string,
-                                 std::unordered_map<std::string, std::string>>&
-            serviceMap,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const char* objPathCreated,
         const std::vector<State>& states) :
         interfaceName(interfaceName),
         featureType(featureType), servicesToBeMonitored(servicesToBeMonitored),
-        serviceMap(serviceMap), stateProperty(stateProperty),
-        defaultState(defaultState), errorState(errorState),
-        objPathCreated(objPathCreated), states(states)
+        stateProperty(stateProperty), defaultState(defaultState),
+        errorState(errorState), objPathCreated(objPathCreated), states(states)
     {}
     virtual ~StateMachineHandler() {}
 
@@ -143,8 +135,6 @@ class StateMachineHandler
     bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
                                   const std::string& val) = 0;
-    virtual std::string getCurrState() = 0;
-    virtual void doActions(const std::vector<std::string>& actions);
 };
 
 class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
@@ -169,25 +159,17 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    std::string getCurrState()
-    {
-        return convertStatesToString(state());
-    }
-
     CategoryFeatureReady(
         sdbusplus::bus::bus& bus, const char* objPath,
         const std::string& interfaceName, const std::string& featureType,
         const std::unordered_map<std::string, std::vector<std::string>>&
             servicesToBeMonitored,
-        const std::unordered_map<std::string,
-                                 std::unordered_map<std::string, std::string>>&
-            serviceMap,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :
         FeatureIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            serviceMap, stateProperty, defaultState, errorState,
-                            objPath, states)
+                            stateProperty, defaultState, errorState, objPath,
+                            states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -313,13 +295,6 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                           const std::string& val)
     {
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
-        // update local cache also
-        localCache[this->objPathCreated] = val;
-    }
-
-    std::string getCurrState()
-    {
-        return convertStatesToString(state());
     }
 
     CategoryServiceReady(
@@ -327,15 +302,12 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
         const std::string& interfaceName, const std::string& featureType,
         const std::unordered_map<std::string, std::vector<std::string>>&
             servicesToBeMonitored,
-        const std::unordered_map<std::string,
-                                 std::unordered_map<std::string, std::string>>&
-            serviceMap,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :
         ServiceIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            serviceMap, stateProperty, defaultState, errorState,
-                            objPath, states)
+                            stateProperty, defaultState, errorState, objPath,
+                            states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -463,25 +435,17 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    std::string getCurrState()
-    {
-        return convertStatesToString(state());
-    }
-
     CategoryInterfaceReady(
         sdbusplus::bus_t& bus, const char* objPath,
         const std::string& interfaceName, const std::string& featureType,
         const std::unordered_map<std::string, std::vector<std::string>>&
             servicesToBeMonitored,
-        const std::unordered_map<std::string,
-                                 std::unordered_map<std::string, std::string>>&
-            serviceMap,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :
         InterfaceIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            serviceMap, stateProperty, defaultState, errorState,
-                            objPath, states)
+                            stateProperty, defaultState, errorState, objPath,
+                            states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -609,25 +573,17 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    std::string getCurrState()
-    {
-        return convertStatesToString(state());
-    }
-
     CategoryDeviceReady(
         sdbusplus::bus_t& bus, const char* objPath,
         const std::string& interfaceName, const std::string& featureType,
         const std::unordered_map<std::string, std::vector<std::string>>&
             servicesToBeMonitored,
-        const std::unordered_map<std::string,
-                                 std::unordered_map<std::string, std::string>>&
-            serviceMap,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :
         DeviceIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            serviceMap, stateProperty, defaultState, errorState,
-                            objPath, states)
+                            stateProperty, defaultState, errorState, objPath,
+                            states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
@@ -749,25 +705,17 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
         localCache[this->objPathCreated] = val;
     }
 
-    std::string getCurrState()
-    {
-        return convertPowerStateToString(currentPowerState());
-    }
-
     CategoryChassisPowerReady(
         sdbusplus::bus_t& bus, const char* objPath,
         const std::string& interfaceName, const std::string& featureType,
         const std::unordered_map<std::string, std::vector<std::string>>&
             servicesToBeMonitored,
-        const std::unordered_map<std::string,
-                                 std::unordered_map<std::string, std::string>>&
-            serviceMap,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :
         ChassisIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            serviceMap, stateProperty, defaultState, errorState,
-                            objPath, states)
+                            stateProperty, defaultState, errorState, objPath,
+                            states)
     {
         // populate default value of state
         setPropertyValue(stateProperty, defaultState);
