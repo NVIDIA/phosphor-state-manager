@@ -34,24 +34,17 @@ constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 // Get the property value
 PropertyValue getPropertyV2(sdbusplus::bus::bus& bus,
+                            const std::string& service,
                             const std::string& objectPath,
                             const std::string& interface,
                             const std::string& propertyName)
 {
-    static auto newBus = sdbusplus::bus::new_default();
     PropertyValue value{};
 
-    auto service = getService(bus, objectPath, interface);
-
-    if (service.empty())
-    {
-        return value;
-    }
-
-    auto method = newBus.new_method_call(service.c_str(), objectPath.c_str(),
-                                         PROPERTY_INTERFACE, "Get");
+    auto method = bus.new_method_call(service.c_str(), objectPath.c_str(),
+                                      PROPERTY_INTERFACE, "Get");
     method.append(interface, propertyName);
-    auto reply = newBus.call(method);
+    auto reply = bus.call(method);
     reply.read(value);
     return value;
 }

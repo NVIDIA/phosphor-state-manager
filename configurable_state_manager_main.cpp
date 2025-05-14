@@ -32,6 +32,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -47,8 +48,13 @@ namespace configurable_state_manager
 
 using namespace phosphor::logging;
 
+constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
+constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
+constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
+
 phosphor::state::manager::utils::PropertyValue
     StateMachineHandler::handleTimeoutRetries(sdbusplus::bus::bus& bus,
+                                              const std::string& service,
                                               const std::string& objectPath,
                                               const std::string& interface,
                                               const std::string& property)
@@ -62,7 +68,7 @@ phosphor::state::manager::utils::PropertyValue
         {
             // Attempt to fetch the property
             auto propertyValue = phosphor::state::manager::utils::getPropertyV2(
-                bus, objectPath, interface, property);
+                bus, service, objectPath, interface, property);
 
             // Log success and return the retrieved value
             log<level::INFO>(
@@ -140,6 +146,222 @@ bool StateMachineHandler::all(const std::vector<bool>& bool_vector)
     return true;
 }
 
+void StateMachineHandler::init(sdbusplus::bus::bus& bus)
+{
+    // Collect object-interface pairs for all states
+    std::unordered_map<std::string, std::unordered_set<std::string>>
+        intfObjPairs;
+    for (const auto& state : states)
+    {
+        collectMatchPairs(state.conditions, intfObjPairs);
+    }
+    // Register signal handlers before executing initial transition
+    for (const auto& [ifaceName, objects] : intfObjPairs)
+    {
+        for (const auto& objPath : objects)
+        {
+            auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
+                sdbusplus::bus::match::match(
+                    bus,
+                    sdbusplus::bus::match::rules::propertiesChanged(
+                        std::string(objPath), ifaceName),
+                    [&](sdbusplus::message::message& msg) {
+                try
+                {
+                    // Execute the transition when properties change
+                    executeTransition();
+                    // for logging
+                    log<level::INFO>(
+                        std::format(
+                            "Property change triggered state transition, Sender: '{}'",
+                            msg.get_sender())
+                            .c_str());
+                }
+                catch (const sdbusplus::exception::SdBusError& e)
+                {
+                    log<level::ERR>("Unable to execute Transiton",
+                                    entry("ERR=%s msg=", e.what()));
+                }
+            }));
+
+            eventHandlerMatcher.push_back(std::move(matchPtr));
+
+            // create interface added matchPtr
+            auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
+                sdbusplus::bus::match::match(
+                    bus,
+                    sdbusplus::bus::match::rules::interfacesAdded() +
+                        sdbusplus::bus::match::rules::argNpath(
+                            0, std::string(objPath)),
+                    [this, ifaceName](sdbusplus::message::message& msg) {
+                std::map<std::string,
+                         std::map<std::string, std::variant<std::string>>>
+                    interfacesMap;
+                sdbusplus::message::object_path path;
+                msg.read(path, interfacesMap);
+
+                for (auto& interface : interfacesMap)
+                {
+                    if (interface.first != ifaceName)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Execute the transition when properties change
+                        executeTransition();
+                        log<level::INFO>(
+                            std::format(
+                                "Property change triggered state transition, Sender: '{}'",
+                                msg.get_sender())
+                                .c_str());
+                    }
+                    catch (const sdbusplus::exception::SdBusError& e)
+                    {
+                        log<level::ERR>(
+                            "Unable to execute Transiton for interface added matchPtr",
+                            entry("ERR=%s msg=", e.what()));
+                    }
+                }
+            }));
+
+            // insert interface added matchPtr
+            eventHandlerMatcher.push_back(std::move(matchPtr2));
+        }
+    }
+}
+
+void StateMachineHandler::collectMatchPairs(
+    const Condition& condition,
+    std::unordered_map<std::string, std::unordered_set<std::string>>&
+        intfObjPairs)
+{
+    // Add the current condition's object-interface pair if object is not empty
+    if (!condition.object.empty() && !condition.intf.empty())
+    {
+        intfObjPairs[condition.intf].insert(condition.object);
+    }
+
+    // Process each sub-condition
+    for (const auto& cond : condition.subConditions)
+    {
+        collectMatchPairs(cond, intfObjPairs);
+    }
+}
+
+bool StateMachineHandler::evaluateCondition(sdbusplus::bus::bus& bus,
+                                            const Condition& condition)
+{
+    // For simple condition type, check property value against target value
+    if (condition.subConditions.empty())
+    {
+        // variable to hold output for getProperty
+        phosphor::state::manager::utils::PropertyValue tmp;
+
+        // find the service name containing object, intf
+        std::string service;
+
+        try
+        {
+            service = phosphor::state::manager::utils::getService(
+                bus, condition.object, condition.intf);
+            if (service.empty())
+            {
+                throw std::runtime_error(
+                    "Empty service returned for object and interface");
+            }
+        }
+        catch (const std::exception& e)
+        {
+            if (!condition.service.empty())
+            {
+                service = condition.service;
+                log<level::INFO>("Falling back to service specified in config");
+            }
+            else
+            {
+                throw std::runtime_error(
+                    "Failed to get service and no fallback service provided");
+            }
+        }
+        log<level::INFO>(
+            std::format("service name fetched: '{}'", service).c_str());
+
+        try
+        {
+            // if the service hosting the object is csm look in local cache
+            if (service.find("ConfigurableStateManager") != std::string::npos)
+            {
+                // if property hosted on same service use local cache
+                // this is kind of local get operation
+                tmp = localCache[condition.object];
+            }
+            else
+            {
+                tmp = handleTimeoutRetries(bus, service, condition.object,
+                                           condition.intf, condition.property);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            auto errStrPath = std::format(
+                "Got error with getProperty() with multiple tries for combination objectPath::{}, interface::{}, property::{}, with exception:: [E]:{}, hence setting state as default state",
+                condition.object, condition.intf, condition.property, e.what());
+            log<level::ERR>(errStrPath.c_str());
+            throw std::runtime_error("Failed to get property");
+        }
+
+        std::string reqValue;
+
+        if (std::holds_alternative<int>(tmp))
+        {
+            int intValue = std::get<int>(tmp);
+            reqValue = std::to_string(intValue);
+        }
+        else if (std::holds_alternative<std::string>(tmp))
+        {
+            reqValue = std::get<std::string>(tmp);
+        }
+        else if (std::holds_alternative<bool>(tmp))
+        {
+            bool boolValue = std::get<bool>(tmp);
+            reqValue = boolValue ? "true" : "false";
+        }
+        else
+        {
+            reqValue = "Unsupported Type";
+        }
+
+        log<level::INFO>(
+            std::format(
+                "Parsed property: '{}' from object: '{}', interface: '{}' with value: {}",
+                condition.property, condition.object, condition.intf, reqValue)
+                .c_str());
+
+        return (condition.value.compare(reqValue) == 0);
+    }
+    // For nested condition type, evaluate sub-conditions recursively
+    else
+    {
+        bool result = (condition.logic == "AND");
+        std::vector<bool> results;
+        for (const auto& subCond : condition.subConditions)
+        {
+            if (condition.logic == "AND")
+            {
+                result = result && evaluateCondition(bus, subCond);
+            }
+            else if (condition.logic == "OR")
+            {
+                result = result || evaluateCondition(bus, subCond);
+            }
+        }
+        return result;
+    }
+    return true;
+}
+
 void StateMachineHandler::executeTransition()
 {
     auto bus = sdbusplus::bus::new_default();
@@ -148,164 +370,61 @@ void StateMachineHandler::executeTransition()
     //  be achieved
     for (const State& stateValueTransition : states)
     {
-        std::string stateValue = stateValueTransition.name;
-        std::string stateValueLogic = stateValueTransition.logic;
-        std::vector<bool> evalConditions;
-
-        // Process conditions to be met to attain the state
-        for (const Condition& condition : stateValueTransition.conditions)
+        bool result = false;
+        try
         {
-            std::vector<bool> evalConditionLoop;
-            // Iterate over objects associated with condition.intf
-            for (const std::string& objectPath :
-                 servicesToBeMonitored[condition.intf])
-            {
-                // variable to hold output for getProperty
-                phosphor::state::manager::utils::PropertyValue tmp;
-                try
-                {
-                    // find the service name containing object, intf
-                    std::string service =
-                        phosphor::state::manager::utils::getService(
-                            bus, objectPath, condition.intf);
-
-                    // if service is empty set unknown state and return
-                    if (service.empty())
-                    {
-                        log<level::ERR>(
-                            "Unable to fetch service name, setting state as default state");
-                        setPropertyValue(stateProperty, defaultState);
-                        return;
-                    }
-
-                    auto errStrPatht =
-                        (boost::format("service name fetched::%s ") % service)
-                            .str();
-                    log<level::ERR>(errStrPatht.c_str());
-                    // if the service hosting the object is csm
-                    // look in local cache
-                    if (service.find("ConfigurableStateManager") !=
-                        std::string::npos)
-                    {
-                        // if property hosted on same service use local cache
-                        // this is kind of local get operation
-                        tmp = localCache[objectPath];
-                    }
-                    else
-                    {
-                        tmp = handleTimeoutRetries(bus, objectPath,
-                                                   condition.intf,
-                                                   condition.property);
-                    }
-                }
-                catch (const std::exception& e)
-                {
-                    auto errStrPath =
-                        (boost::format(
-                             "Got error with getProperty() with multiple tries for combination objectPath::%s, interface::%s, property::%s, with exception:: [E]:%s, hence setting state as default state") %
-                         objectPath % condition.intf % condition.property %
-                         e.what())
-                            .str();
-                    log<level::ERR>(errStrPath.c_str());
-
-                    // set the fallback condition as we are getting error while
-                    // evaluating condition
-                    setPropertyValue(stateProperty, defaultState);
-                    return;
-                }
-
-                std::string reqValue;
-
-                if (std::holds_alternative<int>(tmp))
-                {
-                    int intValue = std::get<int>(tmp);
-                    reqValue = std::to_string(intValue);
-                }
-                else if (std::holds_alternative<std::string>(tmp))
-                {
-                    reqValue = std::get<std::string>(tmp);
-                }
-                else if (std::holds_alternative<bool>(tmp))
-                {
-                    bool boolValue = std::get<bool>(tmp);
-                    reqValue = boolValue ? "true" : "false";
-                }
-                else
-                {
-                    reqValue = "Unsupported Type";
-                }
-
-                log<level::INFO>(
-                    (boost::format(
-                         "Parsed property '%s' from object '%s', interface '%s' with value: %s") %
-                     condition.property % objectPath % condition.intf %
-                     reqValue)
-                        .str()
-                        .c_str());
-
-                int res = condition.value.compare(reqValue);
-                if (res == 0)
-                {
-                    evalConditionLoop.push_back(true);
-                }
-                else
-                {
-                    evalConditionLoop.push_back(false);
-                }
-            }
-
-            if (condition.logic.compare("AND") == 0)
-            {
-                evalConditions.push_back(all(evalConditionLoop));
-            }
-            else if (condition.logic.compare("OR") == 0)
-            {
-                evalConditions.push_back(any(evalConditionLoop));
-            }
-            else if (condition.logic.empty())
-            {
-                // if no logic is present means only single entry
-                evalConditions.push_back(evalConditionLoop[0]);
-            }
-            else
-            {
-                // other cases of not supported logics
-                log<level::ERR>(
-                    "Unsupported logic gate used, hence setting state as default state");
-                // set state to unknown as feature evaluation got error
-                setPropertyValue(stateProperty, defaultState);
-                return;
-            }
+            result = evaluateCondition(bus, stateValueTransition.conditions);
         }
-
-        // final evaluation of all condition boolean results for a particular
-        // state value
-        bool stateConditionsResult = false;
-        if (stateValueTransition.logic.compare("AND") == 0)
+        catch (const std::exception& e)
         {
-            stateConditionsResult = all(evalConditions);
-        }
-        else if (stateValueTransition.logic.compare("OR") == 0)
-        {
-            stateConditionsResult = any(evalConditions);
-        }
-        else if (stateValueTransition.logic.empty())
-        {
-            // if no logic is present means only one condition was there
-            stateConditionsResult = evalConditions[0];
-        }
-        else
-        {
-            // other cases of not supported logics
-            log<level::ERR>("Unsupported logic gate used");
+            // set the fallback condition as we are getting error while
+            // evaluating condition
+            setPropertyValue(stateProperty, defaultState);
+            log<level::ERR>(
+                "Unable to evaluate condition",
+                entry("OBJECT_PATH=%s",
+                      stateValueTransition.conditions.object.c_str()),
+                entry("INTERFACE=%s",
+                      stateValueTransition.conditions.intf.c_str()),
+                entry("PROPERTY=%s",
+                      stateValueTransition.conditions.property.c_str()),
+                entry("REASON=%s", e.what()));
             return;
         }
 
         // if evaluation is true we set the property and return
-        if (stateConditionsResult)
+        if (result && getCurrState() != stateValueTransition.name)
         {
-            setPropertyValue(stateProperty, stateValue);
+            setPropertyValue(stateProperty, stateValueTransition.name);
+            doActions(bus, stateValueTransition.actions);
             return;
+        }
+    }
+}
+
+void StateMachineHandler::doActions(sdbusplus::bus::bus& bus,
+                                    const std::vector<std::string>& actions)
+{
+    for (const auto& action : actions)
+    {
+        try
+        {
+            auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                              SYSTEMD_INTERFACE, "RestartUnit");
+            method.append(action, "replace");
+
+            bus.call_noreply(method);
+
+            log<level::INFO>(
+                std::format("Requested to start systemd service: '{}'", action)
+                    .c_str());
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            log<level::ERR>(
+                std::format("Failed to queue service start '{}': {}", action,
+                            e.what())
+                    .c_str());
         }
     }
 }
@@ -332,6 +451,70 @@ Json ConfigurableStateManager::parseConfigFile(const std::string& configFile)
         return data;
     }
     return data;
+}
+
+Condition ConfigurableStateManager::parseCondition(const Json& conditionJson)
+{
+    Condition condition;
+
+    // Check if this is a simple condition by looking for required fields
+    if (conditionJson.contains("Object"))
+    {
+        // Parse as simple condition
+        condition.service = conditionJson.value("Service", "");
+        condition.object = conditionJson.value("Object", "");
+        condition.intf = conditionJson.value("Intf", "");
+        condition.property = conditionJson.value("Property", "");
+        condition.value = conditionJson.value("Value", "");
+    }
+    else
+    {
+        // Parse as nested condition
+        condition.logic = conditionJson.value("Logic", "");
+
+        // Process nested conditions with "cond_" prefix
+        for (const auto& [key, value] : conditionJson.items())
+        {
+            if (key.rfind("cond_", 0) == 0)
+            {
+                condition.subConditions.push_back(parseCondition(value));
+            }
+        }
+    }
+
+    // Throw exception if both object and subConditions are empty
+    if (condition.object.empty() && condition.subConditions.empty())
+    {
+        throw std::runtime_error(
+            "Invalid condition: both object path and sub-conditions are empty");
+    }
+    // Throw exception if there are multiple subConditions but no logic
+    // specified
+    if (condition.subConditions.size() > 1 && condition.logic.empty())
+    {
+        throw std::runtime_error(
+            "Invalid condition: logic must be specified when multiple sub-conditions are present");
+    }
+    // Throw exception if condition has both simple condition fields and
+    // sub-conditions
+    if (!condition.object.empty() && !condition.subConditions.empty())
+    {
+        throw std::runtime_error(
+            "Invalid condition: cannot mix simple and nested conditions");
+    }
+    // Throw exception if logic type is not "AND" or "OR"
+    if (!condition.logic.empty() && condition.logic != "AND" &&
+        condition.logic != "OR")
+    {
+        throw std::runtime_error("Unsupported logic gate used");
+    }
+
+    if (condition.logic.empty() && condition.subConditions.size() == 1)
+    {
+        condition.logic = "AND";
+    }
+
+    return condition;
 }
 
 } // namespace configurable_state_manager
@@ -403,8 +586,6 @@ int main()
             }
             objToBeAdded = objToBeAdded + extractedString;
 
-            std::unordered_map<std::string, std::vector<std::string>>
-                servicesToBeMonitored = data["ServicesToBeMonitored"];
             std::string stateProperty = data["State"]["State_property"];
             std::string defaultState = data["State"]["Default"];
             std::string errorState = "";
@@ -418,21 +599,13 @@ int main()
                     state; // Create a State object
                 // Extract state-specific data
                 state.name = stateEntry.key();
-                // optional field
-                state.logic = stateEntry.value().value("Logic", "");
-
                 // Extract conditions
-                for (const auto& conditionEntry :
-                     stateEntry.value()["Conditions"].items())
-                {
-                    configurable_state_manager::Condition condition;
-                    condition.intf = conditionEntry.key();
-                    condition.property = conditionEntry.value()["Property"];
-                    condition.value = conditionEntry.value()["Value"];
-                    // optional field
-                    condition.logic = conditionEntry.value().value("Logic", "");
-                    state.conditions.push_back(condition);
-                }
+                state.conditions =
+                    manager.parseCondition(stateEntry.value()["Conditions"]);
+                // Extract actions
+                state.actions = stateEntry.value().value(
+                    "Actions", std::vector<std::string>());
+
                 // Add the state to the states vector
                 states.push_back(state);
             }
@@ -445,8 +618,7 @@ int main()
                     std::move(std::make_unique<
                               configurable_state_manager::CategoryFeatureReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        stateProperty, defaultState, errorState, states)));
             }
             else if (interfaceName.find("DeviceReady") != std::string::npos)
             {
@@ -456,8 +628,7 @@ int main()
                     std::move(std::make_unique<
                               configurable_state_manager::CategoryDeviceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        stateProperty, defaultState, errorState, states)));
             }
             else if (interfaceName.find("InterfaceReady") != std::string::npos)
             {
@@ -467,8 +638,7 @@ int main()
                     std::make_unique<
                         configurable_state_manager::CategoryInterfaceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        stateProperty, defaultState, errorState, states)));
             }
             else if (interfaceName.find("ServiceReady") != std::string::npos)
             {
@@ -478,8 +648,7 @@ int main()
                     std::move(std::make_unique<
                               configurable_state_manager::CategoryServiceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        stateProperty, defaultState, errorState, states)));
             }
             else if (interfaceName.find("State.Chassis") != std::string::npos)
             {
@@ -489,8 +658,7 @@ int main()
                     std::make_unique<
                         configurable_state_manager::CategoryChassisPowerReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        servicesToBeMonitored, stateProperty, defaultState,
-                        errorState, states)));
+                        stateProperty, defaultState, errorState, states)));
             }
         }
         catch (std::exception& e)
