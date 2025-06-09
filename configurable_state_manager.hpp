@@ -32,6 +32,8 @@
 #include <sdbusplus/server/manager.hpp>
 
 #include <iostream>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 using namespace phosphor::logging;
 using Json = nlohmann::ordered_json;
@@ -83,18 +85,21 @@ struct VariantToStringVisitor
 // Define a structure for conditions
 struct Condition
 {
+    std::string service;
+    std::string object;
     std::string intf;
     std::string property;
     std::string value;
     std::string logic;
+    std::vector<Condition> subConditions;
 };
 
 // Define a structure for states
 struct State
 {
     std::string name;
-    std::vector<Condition> conditions;
-    std::string logic;
+    Condition conditions;
+    std::vector<std::string> actions;
 };
 
 class StateMachineHandler
@@ -102,39 +107,48 @@ class StateMachineHandler
   public:
     std::string interfaceName;
     std::string featureType;
-    std::unordered_map<std::string, std::vector<std::string>>
-        servicesToBeMonitored;
     std::string stateProperty;
     std::string defaultState;
     std::string errorState;
     std::string objPathCreated;
     std::vector<State> states;
     // Constructor that takes the JSON configuration as input
-    StateMachineHandler(
-        const std::string& interfaceName, const std::string& featureType,
-        const std::unordered_map<std::string, std::vector<std::string>>&
-            servicesToBeMonitored,
-        const std::string& stateProperty, const std::string& defaultState,
-        const std::string& errorState, const char* objPathCreated,
-        const std::vector<State>& states) :
+    StateMachineHandler(const std::string& interfaceName,
+                        const std::string& featureType,
+                        const std::string& stateProperty,
+                        const std::string& defaultState,
+                        const std::string& errorState,
+                        const char* objPathCreated,
+                        const std::vector<State>& states) :
         interfaceName(interfaceName),
-        featureType(featureType), servicesToBeMonitored(servicesToBeMonitored),
-        stateProperty(stateProperty), defaultState(defaultState),
-        errorState(errorState), objPathCreated(objPathCreated), states(states)
+        featureType(featureType), stateProperty(stateProperty),
+        defaultState(defaultState), errorState(errorState),
+        objPathCreated(objPathCreated), states(states)
     {}
     virtual ~StateMachineHandler() = default;
 
     std::vector<std::unique_ptr<sdbusplus::bus::match::match>>
         eventHandlerMatcher;
 
+    void init(sdbusplus::bus::bus& bus);
     void executeTransition();
-    static phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
-        sdbusplus::bus::bus& bus, const std::string& objectPath,
-        const std::string& interface, const std::string& property);
-    static bool any(const std::vector<bool>& bool_vector);
-    static bool all(const std::vector<bool>& bool_vector);
+    void collectMatchPairs(
+        const Condition& condition,
+        std::unordered_map<std::string, std::unordered_set<std::string>>&
+            intfObjPairs);
+    phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
+        sdbusplus::bus::bus& bus, const std::string& service,
+        const std::string& objectPath, const std::string& interface,
+        const std::string& property);
+    bool evaluateCondition(sdbusplus::bus::bus& bus,
+                           const Condition& condition);
+    bool any(const std::vector<bool>& bool_vector);
+    bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
                                   const std::string& val) = 0;
+    virtual std::string getCurrState() = 0;
+    virtual void doActions(sdbusplus::bus::bus& bus,
+                           const std::vector<std::string>& actions);
 };
 
 class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
@@ -160,23 +174,30 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    CategoryFeatureReady(
-        sdbusplus::bus::bus& bus, const char* objPath,
-        const std::string& interfaceName, const std::string& featureType,
-        const std::unordered_map<std::string, std::vector<std::string>>&
-            servicesToBeMonitored,
-        const std::string& stateProperty, const std::string& defaultState,
-        const std::string& errorState, const std::vector<State>& states) :
+    std::string getCurrState()
+    {
+        return convertStatesToString(state());
+    }
+
+    CategoryFeatureReady(sdbusplus::bus::bus& bus, const char* objPath,
+                         const std::string& interfaceName,
+                         const std::string& featureType,
+                         const std::string& stateProperty,
+                         const std::string& defaultState,
+                         const std::string& errorState,
+                         const std::vector<State>& states) :
         FeatureIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            stateProperty, defaultState, errorState, objPath,
-                            states)
+        StateMachineHandler(interfaceName, featureType, stateProperty,
+                            defaultState, errorState, objPath, states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
         // populate type
         setPropertyValue("FeatureType", featureType);
 
+        init(bus);
+
+        // kind of scan if csm comes after any signal is recieved
         try
         {
             // execute transition logic at startup
@@ -189,87 +210,6 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
                 (boost::format("CategoryFeatureReady : [E]:%s") % e.what())
                     .str();
             log<level::ERR>(errStrPath.c_str());
-        }
-
-        for (const auto& interfaceEntry : servicesToBeMonitored)
-        {
-            const std::string ifaceName = interfaceEntry.first;
-            const std::vector<std::string>& objPaths = interfaceEntry.second;
-
-            for (const std::string& objPath : objPaths)
-            {
-                auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), ifaceName),
-                        [&](sdbusplus::message::message& msg) {
-                    try
-                    {
-                        // Execute the transition when properties change
-                        executeTransition();
-                        // for logging
-                        log<level::INFO>(
-                            (boost::format(
-                                 "Property change triggered state transition, Sender: '%s'") %
-                             msg.get_sender())
-                                .str()
-                                .c_str());
-                    }
-                    catch (const sdbusplus::exception::SdBusError& e)
-                    {
-                        log<level::ERR>("Unable to execute Transiton",
-                                        entry("ERR=%s msg=", e.what()));
-                    }
-                }));
-
-                eventHandlerMatcher.push_back(std::move(matchPtr));
-
-                // create interface added matchPtr
-                auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::interfacesAdded() +
-                            sdbusplus::bus::match::rules::argNpath(
-                                0, std::string(objPath)),
-                        [this, ifaceName](sdbusplus::message::message& msg) {
-                    std::map<std::string,
-                             std::map<std::string, std::variant<std::string>>>
-                        interfacesMap;
-                    sdbusplus::message::object_path path;
-                    msg.read(path, interfacesMap);
-
-                    for (auto& interface : interfacesMap)
-                    {
-                        if (interface.first != ifaceName)
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            // Execute the transition when properties change
-                            executeTransition();
-                            // for logging
-                            log<level::INFO>(
-                                (boost::format(
-                                     "Property change triggered state transition, Sender: '%s'") %
-                                 msg.get_sender())
-                                    .str()
-                                    .c_str());
-                        }
-                        catch (const sdbusplus::exception::SdBusError& e)
-                        {
-                            log<level::ERR>(
-                                "Unable to execute Transiton for interface added matchPtr",
-                                entry("ERR=%s msg=", e.what()));
-                        }
-                    }
-                }));
-
-                // insert interface added matchPtr
-                eventHandlerMatcher.push_back(std::move(matchPtr2));
-            }
         }
     }
 };
@@ -295,25 +235,34 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                           const std::string& val) override
     {
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
+        // update local cache also
+        localCache[this->objPathCreated] = val;
     }
 
-    CategoryServiceReady(
-        sdbusplus::bus::bus& bus, const char* objPath,
-        const std::string& interfaceName, const std::string& featureType,
-        const std::unordered_map<std::string, std::vector<std::string>>&
-            servicesToBeMonitored,
-        const std::string& stateProperty, const std::string& defaultState,
-        const std::string& errorState, const std::vector<State>& states) :
+    std::string getCurrState()
+    {
+        return convertStatesToString(state());
+    }
+
+    CategoryServiceReady(sdbusplus::bus::bus& bus, const char* objPath,
+                         const std::string& interfaceName,
+                         const std::string& featureType,
+                         const std::string& stateProperty,
+                         const std::string& defaultState,
+                         const std::string& errorState,
+                         const std::vector<State>& states) :
         ServiceIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            stateProperty, defaultState, errorState, objPath,
-                            states)
+        StateMachineHandler(interfaceName, featureType, stateProperty,
+                            defaultState, errorState, objPath, states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
         // populate type
         setPropertyValue("ServiceType", featureType);
 
+        init(bus);
+
+        // kind of scan if csm comes after any signal is recieved
         try
         {
             // execute transition logic at startup
@@ -326,87 +275,6 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
                 (boost::format("CategoryServiceReady : [E]:%s") % e.what())
                     .str();
             log<level::ERR>(errStrPath.c_str());
-        }
-
-        for (const auto& interfaceEntry : servicesToBeMonitored)
-        {
-            const std::string ifaceName = interfaceEntry.first;
-            const std::vector<std::string>& objPaths = interfaceEntry.second;
-
-            for (const std::string& objPath : objPaths)
-            {
-                auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), ifaceName),
-                        [&](sdbusplus::message::message& msg) {
-                    try
-                    {
-                        // Execute the transition when properties change
-                        executeTransition();
-                        // for logging
-                        log<level::INFO>(
-                            (boost::format(
-                                 "Property change triggered state transition, Sender: '%s'") %
-                             msg.get_sender())
-                                .str()
-                                .c_str());
-                    }
-                    catch (const sdbusplus::exception::SdBusError& e)
-                    {
-                        log<level::ERR>("Unable to execute Transiton",
-                                        entry("ERR=%s msg=", e.what()));
-                    }
-                }));
-
-                eventHandlerMatcher.push_back(std::move(matchPtr));
-
-                // create interface added matchPtr
-                auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::interfacesAdded() +
-                            sdbusplus::bus::match::rules::argNpath(
-                                0, std::string(objPath)),
-                        [this, ifaceName](sdbusplus::message::message& msg) {
-                    std::map<std::string,
-                             std::map<std::string, std::variant<std::string>>>
-                        interfacesMap;
-                    sdbusplus::message::object_path path;
-                    msg.read(path, interfacesMap);
-
-                    for (auto& interface : interfacesMap)
-                    {
-                        if (interface.first != ifaceName)
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            // Execute the transition when properties change
-                            executeTransition();
-                            // for logging
-                            log<level::INFO>(
-                                (boost::format(
-                                     "Property change triggered state transition, Sender: '%s'") %
-                                 msg.get_sender())
-                                    .str()
-                                    .c_str());
-                        }
-                        catch (const sdbusplus::exception::SdBusError& e)
-                        {
-                            log<level::ERR>(
-                                "Unable to execute Transiton for    interface added matchPtr",
-                                entry("ERR=%s msg=", e.what()));
-                        }
-                    }
-                }));
-
-                // insert interface added matchPtr
-                eventHandlerMatcher.push_back(std::move(matchPtr2));
-            }
         }
     }
 };
@@ -434,23 +302,30 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    CategoryInterfaceReady(
-        sdbusplus::bus_t& bus, const char* objPath,
-        const std::string& interfaceName, const std::string& featureType,
-        const std::unordered_map<std::string, std::vector<std::string>>&
-            servicesToBeMonitored,
-        const std::string& stateProperty, const std::string& defaultState,
-        const std::string& errorState, const std::vector<State>& states) :
+    std::string getCurrState()
+    {
+        return convertStatesToString(state());
+    }
+
+    CategoryInterfaceReady(sdbusplus::bus_t& bus, const char* objPath,
+                           const std::string& interfaceName,
+                           const std::string& featureType,
+                           const std::string& stateProperty,
+                           const std::string& defaultState,
+                           const std::string& errorState,
+                           const std::vector<State>& states) :
         InterfaceIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            stateProperty, defaultState, errorState, objPath,
-                            states)
+        StateMachineHandler(interfaceName, featureType, stateProperty,
+                            defaultState, errorState, objPath, states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
         // populate type
         setPropertyValue("InterfaceType", featureType);
 
+        init(bus);
+
+        // kind of scan if csm comes after any signal is recieved
         try
         {
             // execute transition logic at startup
@@ -463,87 +338,6 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
                 (boost::format("CategoryInterfaceReady : [E]:%s") % e.what())
                     .str();
             log<level::ERR>(errStrPath.c_str());
-        }
-
-        for (const auto& interfaceEntry : servicesToBeMonitored)
-        {
-            const std::string ifaceName = interfaceEntry.first;
-            const std::vector<std::string>& objPaths = interfaceEntry.second;
-
-            for (const std::string& objPath : objPaths)
-            {
-                auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), ifaceName),
-                        [&](sdbusplus::message::message& msg) {
-                    try
-                    {
-                        // Execute the transition when properties change
-                        executeTransition();
-                        // for logging
-                        log<level::INFO>(
-                            (boost::format(
-                                 "Property change triggered state transition, Sender: '%s'") %
-                             msg.get_sender())
-                                .str()
-                                .c_str());
-                    }
-                    catch (const sdbusplus::exception::SdBusError& e)
-                    {
-                        log<level::ERR>("Unable to execute Transiton",
-                                        entry("ERR=%s msg=", e.what()));
-                    }
-                }));
-
-                eventHandlerMatcher.push_back(std::move(matchPtr));
-
-                // create interface added matchPtr
-                auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::interfacesAdded() +
-                            sdbusplus::bus::match::rules::argNpath(
-                                0, std::string(objPath)),
-                        [this, ifaceName](sdbusplus::message::message& msg) {
-                    std::map<std::string,
-                             std::map<std::string, std::variant<std::string>>>
-                        interfacesMap;
-                    sdbusplus::message::object_path path;
-                    msg.read(path, interfacesMap);
-
-                    for (auto& interface : interfacesMap)
-                    {
-                        if (interface.first != ifaceName)
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            // Execute the transition when properties change
-                            executeTransition();
-                            // for logging
-                            log<level::INFO>(
-                                (boost::format(
-                                     "Property change triggered state transition, Sender: '%s'") %
-                                 msg.get_sender())
-                                    .str()
-                                    .c_str());
-                        }
-                        catch (const sdbusplus::exception::SdBusError& e)
-                        {
-                            log<level::ERR>(
-                                "Unable to execute Transiton for    interface added matchPtr",
-                                entry("ERR=%s msg=", e.what()));
-                        }
-                    }
-                }));
-
-                // insert interface added matchPtr
-                eventHandlerMatcher.push_back(std::move(matchPtr2));
-            }
         }
     }
 };
@@ -571,23 +365,30 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    CategoryDeviceReady(
-        sdbusplus::bus_t& bus, const char* objPath,
-        const std::string& interfaceName, const std::string& featureType,
-        const std::unordered_map<std::string, std::vector<std::string>>&
-            servicesToBeMonitored,
-        const std::string& stateProperty, const std::string& defaultState,
-        const std::string& errorState, const std::vector<State>& states) :
+    std::string getCurrState()
+    {
+        return convertStatesToString(state());
+    }
+
+    CategoryDeviceReady(sdbusplus::bus_t& bus, const char* objPath,
+                        const std::string& interfaceName,
+                        const std::string& featureType,
+                        const std::string& stateProperty,
+                        const std::string& defaultState,
+                        const std::string& errorState,
+                        const std::vector<State>& states) :
         DeviceIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            stateProperty, defaultState, errorState, objPath,
-                            states)
+        StateMachineHandler(interfaceName, featureType, stateProperty,
+                            defaultState, errorState, objPath, states)
     {
         // populate default state
         setPropertyValue(stateProperty, defaultState);
         // populate type
         setPropertyValue("DeviceType", featureType);
 
+        init(bus);
+
+        // kind of scan if csm comes after any signal is recieved
         try
         {
             // execute transition logic at startup
@@ -600,87 +401,6 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
                 (boost::format("CategoryDeviceReady : [E]:%s") % e.what())
                     .str();
             log<level::ERR>(errStrPath.c_str());
-        }
-
-        for (const auto& interfaceEntry : servicesToBeMonitored)
-        {
-            const std::string ifaceName = interfaceEntry.first;
-            const std::vector<std::string>& objPaths = interfaceEntry.second;
-
-            for (const std::string& objPath : objPaths)
-            {
-                auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), ifaceName),
-                        [&](sdbusplus::message::message& msg) {
-                    try
-                    {
-                        // Execute the transition when properties change
-                        executeTransition();
-                        // for logging
-                        log<level::INFO>(
-                            (boost::format(
-                                 "Property change triggered state transition, Sender: '%s'") %
-                             msg.get_sender())
-                                .str()
-                                .c_str());
-                    }
-                    catch (const sdbusplus::exception::SdBusError& e)
-                    {
-                        log<level::ERR>("Unable to execute Transiton",
-                                        entry("ERR=%s msg=", e.what()));
-                    }
-                }));
-
-                eventHandlerMatcher.push_back(std::move(matchPtr));
-
-                // create interface added matchPtr
-                auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::interfacesAdded() +
-                            sdbusplus::bus::match::rules::argNpath(
-                                0, std::string(objPath)),
-                        [this, ifaceName](sdbusplus::message::message& msg) {
-                    std::map<std::string,
-                             std::map<std::string, std::variant<std::string>>>
-                        interfacesMap;
-                    sdbusplus::message::object_path path;
-                    msg.read(path, interfacesMap);
-
-                    for (auto& interface : interfacesMap)
-                    {
-                        if (interface.first != ifaceName)
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            // Execute the transition when properties change
-                            executeTransition();
-                            // for logging
-                            log<level::INFO>(
-                                (boost::format(
-                                     "Property change triggered state transition, Sender: '%s'") %
-                                 msg.get_sender())
-                                    .str()
-                                    .c_str());
-                        }
-                        catch (const sdbusplus::exception::SdBusError& e)
-                        {
-                            log<level::ERR>(
-                                "Unable to execute Transiton for    interface added matchPtr",
-                                entry("ERR=%s msg=", e.what()));
-                        }
-                    }
-                }));
-
-                // insert interface added matchPtr
-                eventHandlerMatcher.push_back(std::move(matchPtr2));
-            }
         }
     }
 };
@@ -702,21 +422,28 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
         localCache[this->objPathCreated] = val;
     }
 
-    CategoryChassisPowerReady(
-        sdbusplus::bus_t& bus, const char* objPath,
-        const std::string& interfaceName, const std::string& featureType,
-        const std::unordered_map<std::string, std::vector<std::string>>&
-            servicesToBeMonitored,
-        const std::string& stateProperty, const std::string& defaultState,
-        const std::string& errorState, const std::vector<State>& states) :
+    std::string getCurrState()
+    {
+        return convertPowerStateToString(currentPowerState());
+    }
+
+    CategoryChassisPowerReady(sdbusplus::bus_t& bus, const char* objPath,
+                              const std::string& interfaceName,
+                              const std::string& featureType,
+                              const std::string& stateProperty,
+                              const std::string& defaultState,
+                              const std::string& errorState,
+                              const std::vector<State>& states) :
         ChassisIntfInherit(bus, objPath),
-        StateMachineHandler(interfaceName, featureType, servicesToBeMonitored,
-                            stateProperty, defaultState, errorState, objPath,
-                            states)
+        StateMachineHandler(interfaceName, featureType, stateProperty,
+                            defaultState, errorState, objPath, states)
     {
         // populate default value of state
         setPropertyValue(stateProperty, defaultState);
 
+        init(bus);
+
+        // kind of scan if csm comes after any signal is recieved
         try
         {
             // execute transition logic at startup
@@ -730,90 +457,6 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
                     .str();
             log<level::ERR>(errStrPath.c_str());
         }
-
-        for (const auto& interfaceEntry : servicesToBeMonitored)
-        {
-            const std::string ifaceName = interfaceEntry.first;
-            const std::vector<std::string>& objPaths = interfaceEntry.second;
-
-            for (const std::string& objPath : objPaths)
-            {
-                // create propertiesChange matchptr
-                auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::propertiesChanged(
-                            std::string(objPath), ifaceName),
-                        [&](sdbusplus::message::message& msg) {
-                    try
-                    {
-                        // Execute the transition when properties change
-                        executeTransition();
-                        // for logging
-                        log<level::INFO>(
-                            (boost::format(
-                                 "Property change triggered state transition, Sender: '%s'") %
-                             msg.get_sender())
-                                .str()
-                                .c_str());
-                    }
-                    catch (const sdbusplus::exception::SdBusError& e)
-                    {
-                        log<level::ERR>(
-                            "Unable to execute Transiton for property change matchPtr",
-                            entry("ERR=%s msg=", e.what()));
-                    }
-                }));
-
-                // insert propertiesChange matchPtr
-                eventHandlerMatcher.push_back(std::move(matchPtr));
-
-                // create interface added matchPtr
-                auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
-                    sdbusplus::bus::match::match(
-                        bus,
-                        sdbusplus::bus::match::rules::interfacesAdded() +
-                            sdbusplus::bus::match::rules::argNpath(
-                                0, std::string(objPath)),
-                        [this, ifaceName](sdbusplus::message::message& msg) {
-                    std::map<std::string,
-                             std::map<std::string, std::variant<std::string>>>
-                        interfacesMap;
-                    sdbusplus::message::object_path path;
-                    msg.read(path, interfacesMap);
-
-                    for (auto& interface : interfacesMap)
-                    {
-                        if (interface.first != ifaceName)
-                        {
-                            continue;
-                        }
-
-                        try
-                        {
-                            // Execute the transition when properties change
-                            executeTransition();
-                            // for logging
-                            log<level::INFO>(
-                                (boost::format(
-                                     "Property change triggered state transition, Sender: '%s'") %
-                                 msg.get_sender())
-                                    .str()
-                                    .c_str());
-                        }
-                        catch (const sdbusplus::exception::SdBusError& e)
-                        {
-                            log<level::ERR>(
-                                "Unable to execute Transiton for    interface added matchPtr",
-                                entry("ERR=%s msg=", e.what()));
-                        }
-                    }
-                }));
-
-                // insert interfacesAdded matchPtr
-                eventHandlerMatcher.push_back(std::move(matchPtr2));
-            }
-        }
     }
 };
 
@@ -826,7 +469,8 @@ class ConfigurableStateManager
     ~ConfigurableStateManager() = default;
 
     /** @brief Parse JSON file  */
-    static Json parseConfigFile(const std::string& configFile);
+    Json parseConfigFile(const std::string& configFile);
+    Condition parseCondition(const Json& conditionJson);
 
     // Declare vectors to hold the different entity objects
     std::vector<std::unique_ptr<CategoryFeatureReady>> featureEntities;

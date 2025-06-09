@@ -89,9 +89,13 @@ void Host::setupSupportedTransitions()
 {
     std::set<Transition> supportedTransitions = {
         Transition::On,
+#if ENABLE_GRACEFUL_SHUTDOWN
         Transition::Off,
+#endif
         Transition::Reboot,
+#if ENABLE_GRACEFUL_WARM_REBOOT
         Transition::GracefulWarmReboot,
+#endif
 #if ENABLE_FORCE_WARM_REBOOT
         Transition::ForceWarmReboot,
 #endif
@@ -420,6 +424,30 @@ Host::Transition Host::requestedHostTransition(Transition value)
     }
 #endif
 
+#if !ENABLE_GRACEFUL_WARM_REBOOT
+    if (value == Transition::GracefulWarmReboot)
+    {
+        info(" '{TRANSITION}' is not supported", "TRANSITION", value);
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
+    }
+#endif
+
+#if !ENABLE_FORCE_WARM_REBOOT
+    if (value == Transition::ForceWarmReboot)
+    {
+        info(" '{TRANSITION}' is not supported", "TRANSITION", value);
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
+    }
+#endif
+
+#if !ENABLE_GRACEFUL_SHUTDOWN
+    if (value == Transition::Off)
+    {
+        info(" '{TRANSITION}' is not supported", "TRANSITION", value);
+        throw sdbusplus::exception::SdBusError(-EINVAL, "internal_exception");
+    }
+#endif
+
     // If this is not a power off request then we need to
     // decrement the reboot counter.  This code should
     // never prevent a power on, it should just decrement
@@ -446,6 +474,12 @@ Host::Transition Host::requestedHostTransition(Transition value)
     {
         transitionStr = "GracefulWarmReboot";
     }
+#if ENABLE_FORCE_WARM_REBOOT
+    else if (value == Transition::ForceWarmReboot)
+    {
+        transitionStr = "ForceWarmReboot";
+    }
+#endif
     else
     {
         transitionStr = "Unknown";

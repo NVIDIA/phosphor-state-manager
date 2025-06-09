@@ -189,17 +189,15 @@ All the json files are present under path **"/usr/share/configurable-state-manag
 {
     "InterfaceName" : "xyz.openbmc_project.State.FeatureReady",
     "TypeInCategory": "xyz.openbmc_project.State.FeatureReady.FeatureTypes.Telemetry",
-    "ServicesToBeMonitored": {
-        "xyz.openbmc_project.State.Chassis": ["/xyz/openbmc_project/state/configurableStateManager/ChassisPower"],
-        "xyz.openbmc_project.State.ServiceReady": ["/xyz/openbmc_project/GpuMgr", "/xyz/openbmc_project/inventory/metrics/platformmetrics"]
-    },
     "State": {
         "State_property": "State",
         "Default": "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline",
         "States": {
             "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline": {
                 "Conditions": {
-                    "xyz.openbmc_project.State.Chassis": {
+                    "cond_1": {
+                        "Object" : "/xyz/openbmc_project/state/configurableStateManager/ChassisPower",
+                        "Intf" : "xyz.openbmc_project.State.Chassis",
                         "Property" : "CurrentPowerState",
                         "Value" : "xyz.openbmc_project.State.Chassis.PowerState.Off"
                     }
@@ -207,31 +205,55 @@ All the json files are present under path **"/usr/share/configurable-state-manag
             },
             "xyz.openbmc_project.State.FeatureReady.States.Enabled": {
                 "Conditions": {
-                    "xyz.openbmc_project.State.Chassis": {
+                    "cond_2": {
+                        "Object" : "/xyz/openbmc_project/state/configurableStateManager/ChassisPower",
+                        "Intf" : "xyz.openbmc_project.State.Chassis",
                         "Property": "CurrentPowerState",
                         "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
                     },
-                    "xyz.openbmc_project.State.ServiceReady": {
-                        "Property" : "State",
-                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled",
+                    "cond_3": {
+                        "cond_4": {
+                            "Object" : "/xyz/openbmc_project/GpuMgr",
+                            "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                            "Property" : "State",
+                            "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled"
+                        },
+                        "cond_5": {
+                            "Object" : "/xyz/openbmc_project/inventory/metrics/platformmetrics",
+                            "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                            "Property" : "State",
+                            "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled"
+                        }
                         "Logic": "AND"
-                    }
-                },
-                "Logic": "AND"
+                    },
+                    "Logic": "AND"
+                }
             },
             "xyz.openbmc_project.State.FeatureReady.States.Starting": {
                 "Conditions": {
-                    "xyz.openbmc_project.State.Chassis": {
+                    "cond_6": {
+                        "Object" : "/xyz/openbmc_project/state/configurableStateManager/ChassisPower",
+                        "Intf" : "xyz.openbmc_project.State.Chassis",
                         "Property": "CurrentPowerState",
                         "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
                     },
-                    "xyz.openbmc_project.State.ServiceReady": {
-                        "Property" : "State",
-                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Starting",
+                    "cond_7": {
+                        "cond_8": {
+                            "Object" : "/xyz/openbmc_project/GpuMgr",
+                            "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                            "Property" : "State",
+                            "Value" : "xyz.openbmc_project.State.ServiceReady.States.Starting",
+                        },
+                        "cond_9": {
+                            "Object" : "/xyz/openbmc_project/inventory/metrics/platformmetrics",
+                            "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                            "Property" : "State",
+                            "Value" : "xyz.openbmc_project.State.ServiceReady.States.Starting",
+                        },
                         "Logic": "OR"
                     }
-                },
-                "Logic": "AND"
+                    "Logic": "AND"
+                }
             }
         }
     }
@@ -244,14 +266,6 @@ All the json files are present under path **"/usr/share/configurable-state-manag
 **TypeInCategory -** this key will pass the type value for Properties like FeatureType/DeviceType/ServiceType etc defined in the interfaces. Like for TelemetryReadiness use case we are implementing dbus api **"xyz.openbmc_project.State.FeatureReady"**. TypeInCategory will pass the value for the property **"FeatureType"** in the interface above. TypeInCategory value should be from the enumeration defined. For above interface enumeration is **{Telemetry, FWUpdate, MC}**. This is the necessary field. If value intended is not present in enumeration, need to make change in PDI. This field will also provide name for sbus object. We will Telemetry substring from this string and create dbus object **"/xyz/openbmc_project/state/configurableStateManager/Telemetry"**
 > **ex:** "TypeInCategory": "xyz.openbmc_project.State.FeatureReady.FeatureTypes.Telemetry"
 
-**ServicesToBeMonitored -** this key will pass a map of { interface-name : [array of object-paths implementing the particular interface] } we want to monitor. These combinations will be responsible in transition of states for the particular use case. This is the necessary field.
-> **ex:** 
-```
-"ServicesToBeMonitored": {
-        "xyz.openbmc_project.State.Chassis": ["/xyz/openbmc_project/state/configurableStateManager/ChassisPower"],
-        "xyz.openbmc_project.State.ServiceReady": ["/xyz/openbmc_project/GpuMgr", "/xyz/openbmc_project/inventory/metrics/platformmetrics"]
-    }
-```
 **State -** this key will contain the whole transition logic for the use case 
 > **ex:** "State": { //transition logic }
 
@@ -265,33 +279,73 @@ All the json files are present under path **"/usr/share/configurable-state-manag
 Whenever conditions are true that particular value is set.
 > **ex:** 
 ```
-"States": {
-            "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline": {
-                "Conditions": {
-                    "xyz.openbmc_project.State.Chassis": {
-                        "Property" : "CurrentPowerState",
-                        "Value" : "xyz.openbmc_project.State.Chassis.PowerState.Off"
-                    }
+"State": {
+    "State_property": "State",
+    "Default": "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline",
+    "States": {
+        "xyz.openbmc_project.State.FeatureReady.States.StandbyOffline": {
+            "Conditions": {
+                "cond_1": {
+                    "Object" : "/xyz/openbmc_project/state/configurableStateManager/ChassisPower",
+                    "Intf" : "xyz.openbmc_project.State.Chassis",
+                    "Property" : "CurrentPowerState",
+                    "Value" : "xyz.openbmc_project.State.Chassis.PowerState.Off"
                 }
-            },
-            "xyz.openbmc_project.State.FeatureReady.States.Enabled": {
-                "Conditions": {
-                    "xyz.openbmc_project.State.Chassis": {
-                        "Property": "CurrentPowerState",
-                        "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
-                    },
-                    "xyz.openbmc_project.State.ServiceReady": {
+            }
+        },
+        "xyz.openbmc_project.State.FeatureReady.States.Enabled": {
+            "Conditions": {
+                "cond_2": {
+                    "Object" : "/xyz/openbmc_project/state/configurableStateManager/ChassisPower",
+                    "Intf" : "xyz.openbmc_project.State.Chassis",
+                    "Property": "CurrentPowerState",
+                    "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
+                },
+                "cond_3": {
+                    "cond_4": {
+                        "Object" : "/xyz/openbmc_project/GpuMgr",
+                        "Intf" : "xyz.openbmc_project.State.ServiceReady",
                         "Property" : "State",
-                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled",
-                        "Logic": "AND"
+                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled"
+                    },
+                    "cond_5": {
+                        "Object" : "/xyz/openbmc_project/inventory/metrics/platformmetrics",
+                        "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                        "Property" : "State",
+                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled"
                     }
+                    "Logic": "AND"
                 },
                 "Logic": "AND"
             }
         }
+    }
+}
 ```
 
-**Conditions -** Each entry of Conditions block will have interface to be monitored as a key, property name and value to watch under that interface. We already have **ServicesToBeMonitored** block. From that we will get all services implementing that interface. Now we will have combination of ** <interface, objectpath, PropertyName, PropertyValue> **. Now for each type of combination we will check whether PropertyName has value equal to PropertyValue. This is a necessary field.
+**Conditions -** Each entry of Conditions block will have a "cond_" prefix name as the key, and contains interface, object path, property name and value to watch. For each condition, we will check whether PropertyName has value equal to PropertyValue. This is a necessary field.
+
+The Conditions block is composed of two items:
+1. One or multiple condition blocks (with "cond_" prefix names)
+2. "Logic" field (optional)
+
+Condition blocks have a key with "cond_" prefix (e.g., "cond_1", "cond_2", "cond_netif") and come in two types:
+
+1. **Simple Condition Block**:
+   - "Service" (optional): The D-Bus service name to check. By default, CSM uses Object Mapper to find the service name with corresponding object path & interface. However, some services like org.freedesktop.systemd1 cannot be found this way. The service name is resolved in this order:
+     1. Search via Object Mapper
+     2. Use the explicitly specified name in "Service" field, if provided and valid
+     If both methods fail, CSM will set the state to "Default"
+   - "Object": The D-Bus object path to check
+   - "Intf": The D-Bus interface to check
+   - "Property": The property name to check
+   - "Value": The expected value of the property
+
+2. **Nested Condition Block**:
+   - Contains one or multiple child condition blocks (which can be either simple or nested)
+   - "Logic" field: Specifies how to combine the results of child conditions (e.g., "AND", "OR")
+
+This nested structure allows for complex condition trees with logical combinations of D-Bus property checks.
 
 **Important** - If there is a single combination present there is no need of "Logical" field. So logical field is optional. If there is a single combination present means it is kind of "==" operation. 
 
@@ -301,69 +355,47 @@ Lets understand the conditons block below.
 
 ```
 "xyz.openbmc_project.State.FeatureReady.States.Enabled": {
-                "Conditions": {
-                    "xyz.openbmc_project.State.Chassis": {
-                        "Property": "CurrentPowerState",
-                        "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
-                    },
-                    "xyz.openbmc_project.State.ServiceReady": {
-                        "Property" : "State",
-                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled",
-                        "Logic": "AND"           **//individual entry logic**
-                    }
-                },
-                "Logic": "AND"                 **//parent logic**
-            }
+    "Conditions": {
+        "cond_2": {
+            "Object" : "/xyz/openbmc_project/state/configurableStateManager/ChassisPower",
+            "Intf" : "xyz.openbmc_project.State.Chassis",
+            "Property": "CurrentPowerState",
+            "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
+        },
+        "cond_3": {
+            "cond_4": {
+                "Object" : "/xyz/openbmc_project/GpuMgr",
+                "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                "Property" : "State",
+                "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled"
+            },
+            "cond_5": {
+                "Object" : "/xyz/openbmc_project/inventory/metrics/platformmetrics",
+                "Intf" : "xyz.openbmc_project.State.ServiceReady",
+                "Property" : "State",
+                "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled"
+            },
+            "Logic": "AND"
+        },
+        "Logic": "AND"
+    }
+}
 ```
 
-**Entry1** 
-```
- "xyz.openbmc_project.State.Chassis": {
-                        "Property": "CurrentPowerState",
-                        "Value": "xyz.openbmc_project.State.Chassis.PowerState.On"
-                    }
-```
+In this example:
+- "cond_2" is a simple condition checking if the chassis power is on
+- "cond_3" is a nested condition that contains two sub-conditions:
+  - "cond_4" checks if the GpuMgr service is enabled
+  - "cond_5" checks if the platformmetrics service is enabled
+  - These two sub-conditions are combined with "AND" logic
+- The top-level "cond_2" and "cond_3" conditions are combined with "AND" logic
 
-Entry_1_Combination_1 
-- interface - "xyz.openbmc_project.State.Chassis"
-- Property - "CurrentPowerState"
-- Value - "xyz.openbmc_project.State.Chassis.PowerState.On"
-- Object - "/xyz/openbmc_project/state/configurableStateManager/ChassisPower"
+The complete logic is:
+> "cond_2" **AND** ("cond_4" **AND** "cond_5")
 
-As there is single combination no need of Logical field.
-
-**Entry2** 
-```
-"xyz.openbmc_project.State.ServiceReady": {
-                        "Property" : "State",
-                        "Value" : "xyz.openbmc_project.State.ServiceReady.States.Enabled",
-                        "Logic": "AND"
-                    }
-```
-
-Here combinations are-
-
-For interface xyz.openbmc_project.State.ServiceReady we get 2 object paths "/xyz/openbmc_project/GpuMgr", "/xyz/openbmc_project/inventory/metrics/platformmetrics"
-
-Entry_2_Combination_1
-- interface - "xyz.openbmc_project.State.ServiceReady"
-- Property - "State"
-- Value - "xyz.openbmc_project.State.ServiceReady.States.Enabled"
-- Object - "/xyz/openbmc_project/GpuMgr"
-
-Entry_2_Combination_2
-- interface - "xyz.openbmc_project.State.ServiceReady"
-- Property - "State"
-- Value - "xyz.openbmc_project.State.ServiceReady.States.Enabled"
-- Object - "/xyz/openbmc_project/inventory/metrics/platformmetrics"
-
-For entry2 -> we have "Logic": "AND" means "Entry_2_Combination_1 AND Entry_2_Combination_2"
-
-Now For condition key "xyz.openbmc_project.State.FeatureReady.States.Enabled" parent logic is "AND". Hence complete logic is
-> Entry_1_Combination_1 **AND** ( Entry_2_Combination_1 **AND** Entry_2_Combination_2 )
-
-> This upper logic says **"State"** value will be set to **"xyz.openbmc_project.State.FeatureReady.States.Enabled"** when chassis power is ON (entry1) and all subservices gpuMgr and sensorServer are Enabled(Entry2).
-
+This means the state will be set to "xyz.openbmc_project.State.FeatureReady.States.Enabled" when:
+1. The chassis power is ON (cond_2) AND
+2. Both the GpuMgr service (cond_4) AND the platformmetrics service (cond_5) are Enabled
 
 On similar lines we have ChassisPower.json
 > ChassisPower.json
@@ -372,16 +404,15 @@ On similar lines we have ChassisPower.json
 {
     "InterfaceName":"xyz.openbmc_project.State.Chassis",
     "TypeInCategory": "ChassisPower",
-    "ServicesToBeMonitored":{
-        "xyz.openbmc_project.GpioStatus": ["/xyz/openbmc_project/GpioStatusHandler"]
-    },
     "State":{
         "State_property": "CurrentPowerState",
         "Default": "xyz.openbmc_project.State.Chassis.PowerState.Off",
         "States":{
             "xyz.openbmc_project.State.Chassis.PowerState.On": {
                 "Conditions" : {
-                    "xyz.openbmc_project.GpioStatus": {
+                    "cond_1": {
+                        "Object" : "/xyz/openbmc_project/GpioStatusHandler",
+                        "Intf" : "xyz.openbmc_project.GpioStatus",
                         "Property" : "GPU_BASE_PWR_GD",
                         "Value": "true"
                     }
@@ -389,7 +420,9 @@ On similar lines we have ChassisPower.json
             },
             "xyz.openbmc_project.State.Chassis.PowerState.Off": {
                 "Conditions" : {
-                    "xyz.openbmc_project.GpioStatus": {
+                    "cond_2": {
+                        "Object" : "/xyz/openbmc_project/GpioStatusHandler",
+                        "Intf" : "xyz.openbmc_project.GpioStatus",
                         "Property" : "GPU_BASE_PWR_GD",
                         "Value": "false"
                     }
@@ -402,6 +435,56 @@ On similar lines we have ChassisPower.json
 
 In above json file chassisPower.json, the fields present as keys are all mandatory fields, they must be present otherwise we will get error.
 Consider this json as a basic template to be implemented.
+
+**Actions (Optional) -** The **Actions** field is an optional list that defines a sequence of Systemd services to start/restart when the specified conditions are met. Actions are executed sequentially in the order they appear in the list.
+
+If any action fails (throws an exception), the sequence will continue without interruption.
+
+```
+"States": {
+    "xyz.openbmc_project.State.ServiceReady.States.Enabled": {
+        "Conditions": {
+            "cond_bmcweb": {
+                "Service": "org.freedesktop.systemd1",
+                "Object": "/org/freedesktop/systemd1/unit/bmcweb_2eservice",
+                "Intf": "org.freedesktop.systemd1.Unit",
+                "Property": "SubState",
+                "Value": "running"
+            },
+            "cond_rwfs": {
+                "Service": "org.freedesktop.systemd1",
+                "Object": "/org/freedesktop/systemd1/unit/run_2dinitramfs_2drw_2emount",
+                "Intf": "org.freedesktop.systemd1.Unit",
+                "Property": "SubState",
+                "Value": "mounted"
+            },
+            "cond_logging": {
+                "cond_logging_result": {
+                    "Service": "org.freedesktop.systemd1",
+                    "Object": "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice",
+                    "Intf": "org.freedesktop.systemd1.Service",
+                    "Property": "Result",
+                    "Value": "success"
+                },
+                "cond_logging_sstate": {
+                    "Service": "org.freedesktop.systemd1",
+                    "Object": "/org/freedesktop/systemd1/unit/nvidia_2demmc_2dlogging_2eservice",
+                    "Intf": "org.freedesktop.systemd1.Unit",
+                    "Property": "SubState",
+                    "Value": "exited"
+                },
+                "Logic": "AND"
+            },
+            "Logic": "AND"
+        },
+        "Actions": [
+            "hmc-ready-pull@up.service"
+        ]
+    }
+}
+```
+
+In this example, when the system transitions to the `xyz.openbmc_project.State.ServiceReady.States.Enabled` state (i.e., Bmcweb is running, rwfs is mounted, and logging services exits successfully), the service `hmc-ready-pull@up.service` will be executed.
 
 ## Flowchart of CSM
 ```
@@ -450,7 +533,8 @@ Consider this json as a basic template to be implemented.
      | Extract Interface Name, Feature Type etc.|                                              |                     v (true)                 v (false)             ^
      +------------------------------------------+                                              |                     |                        |                     |
               |                                                                                |        +-------------------------+    +----------------------+     |
-              v                                                                                |        | - set the state value   |    | - log error message  |------   
+              |                                                                                |        | - set the state value   |    | - log error message  |------   
+              v                                                                                |        | - (option) exec action  |    |                      |
      +-----------------------------------------------------------------------------------      |        | - return                |    |                      |
      | Create State Machine Entities                                                     |     |        +-------------------------+    +----------------------+
      | - on object creation set default value and type property                          |     |                                               | 
