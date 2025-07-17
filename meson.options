@@ -120,6 +120,20 @@ option(
 )
 
 option(
+    'power-on',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable power on of the system',
+)
+
+option(
+    'force-off',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Enable force power off of the system',
+)
+
+option(
     'host-gpios-busname',
     type: 'string',
     value: 'xyz.openbmc_project.State.HostCondition.Gpio',

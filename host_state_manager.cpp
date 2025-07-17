@@ -88,9 +88,14 @@ void Host::determineInitialState()
 void Host::setupSupportedTransitions()
 {
     std::set<Transition> supportedTransitions = {
+#if ENABLE_POWER_ON
         Transition::On,
+#endif
 #if ENABLE_GRACEFUL_SHUTDOWN
         Transition::Off,
+#endif
+#if ENABLE_FORCE_OFF
+        Transition::ForceOff,
 #endif
         Transition::Reboot,
 #if ENABLE_GRACEFUL_WARM_REBOOT

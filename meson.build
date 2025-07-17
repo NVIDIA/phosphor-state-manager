@@ -102,6 +102,14 @@ if (get_option('graceful-shutdown').allowed())
     add_project_arguments('-DENABLE_GRACEFUL_SHUTDOWN', language: 'cpp')
 endif
 
+if (get_option('power-on').allowed())
+    add_project_arguments('-DENABLE_POWER_ON', language: 'cpp')
+endif
+
+if (get_option('force-off').allowed())
+    add_project_arguments('-DENABLE_FORCE_OFF', language: 'cpp')
+endif
+
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')
