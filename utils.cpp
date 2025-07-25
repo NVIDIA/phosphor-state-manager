@@ -274,11 +274,7 @@ bool waitForPowerDelayRestore(sdbusplus::bus_t& bus,
                               std::chrono::seconds timeout)
 {
     std::this_thread::sleep_for(timeout);
-    if (isBmcReady(bus))
-    {
-        return true;
-    }
-    return false;
+    return isBmcReady(bus);
 }
 
 } // namespace utils

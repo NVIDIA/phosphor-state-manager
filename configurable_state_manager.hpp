@@ -136,14 +136,14 @@ class StateMachineHandler
         const Condition& condition,
         std::unordered_map<std::string, std::unordered_set<std::string>>&
             intfObjPairs);
-    phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
+    static phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
         sdbusplus::bus::bus& bus, const std::string& service,
         const std::string& objectPath, const std::string& interface,
         const std::string& property);
     bool evaluateCondition(sdbusplus::bus::bus& bus,
                            const Condition& condition);
-    bool any(const std::vector<bool>& bool_vector);
-    bool all(const std::vector<bool>& bool_vector);
+    static bool any(const std::vector<bool>& bool_vector);
+    static bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
                                   const std::string& val) = 0;
     virtual std::string getCurrState() = 0;
@@ -174,7 +174,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    std::string getCurrState()
+    std::string getCurrState() override
     {
         return convertStatesToString(state());
     }
@@ -239,7 +239,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
         localCache[this->objPathCreated] = val;
     }
 
-    std::string getCurrState()
+    std::string getCurrState() override
     {
         return convertStatesToString(state());
     }
@@ -302,7 +302,7 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    std::string getCurrState()
+    std::string getCurrState() override
     {
         return convertStatesToString(state());
     }
@@ -365,7 +365,7 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
         setPropertyByName(stateProperty, getPropertyValue(stateProperty, val));
     }
 
-    std::string getCurrState()
+    std::string getCurrState() override
     {
         return convertStatesToString(state());
     }
@@ -422,7 +422,7 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
         localCache[this->objPathCreated] = val;
     }
 
-    std::string getCurrState()
+    std::string getCurrState() override
     {
         return convertPowerStateToString(currentPowerState());
     }
@@ -469,7 +469,7 @@ class ConfigurableStateManager
     ~ConfigurableStateManager() = default;
 
     /** @brief Parse JSON file  */
-    Json parseConfigFile(const std::string& configFile);
+    static Json parseConfigFile(const std::string& configFile);
     Condition parseCondition(const Json& conditionJson);
 
     // Declare vectors to hold the different entity objects

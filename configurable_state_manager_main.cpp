@@ -339,7 +339,7 @@ bool StateMachineHandler::evaluateCondition(sdbusplus::bus::bus& bus,
                 condition.property, condition.object, condition.intf, reqValue)
                 .c_str());
 
-        return (condition.value.compare(reqValue) == 0);
+        return (condition.value == reqValue);
     }
     // For nested condition type, evaluate sub-conditions recursively
     else
@@ -555,7 +555,8 @@ int main()
     for (const auto& jsonFilePath : jsonFiles)
     {
         const std::string& configFile = jsonFilePath;
-        Json data = manager.parseConfigFile(configFile);
+        Json data = configurable_state_manager::ConfigurableStateManager::
+            parseConfigFile(configFile);
         if (data.is_null() || data.is_discarded())
         {
             continue;
@@ -615,50 +616,50 @@ int main()
                 errorState =
                     "xyz.openbmc_project.State.FeatureReady.States.Unknown";
                 manager.featureEntities.push_back(
-                    std::move(std::make_unique<
-                              configurable_state_manager::CategoryFeatureReady>(
+                    std::make_unique<
+                        configurable_state_manager::CategoryFeatureReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        stateProperty, defaultState, errorState, states)));
+                        stateProperty, defaultState, errorState, states));
             }
             else if (interfaceName.find("DeviceReady") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.DeviceReady.States.Unknown";
                 manager.deviceEntities.push_back(
-                    std::move(std::make_unique<
-                              configurable_state_manager::CategoryDeviceReady>(
+                    std::make_unique<
+                        configurable_state_manager::CategoryDeviceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        stateProperty, defaultState, errorState, states)));
+                        stateProperty, defaultState, errorState, states));
             }
             else if (interfaceName.find("InterfaceReady") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.InterfaceReady.States.Unknown";
-                manager.interfaceEntities.push_back(std::move(
+                manager.interfaceEntities.push_back(
                     std::make_unique<
                         configurable_state_manager::CategoryInterfaceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        stateProperty, defaultState, errorState, states)));
+                        stateProperty, defaultState, errorState, states));
             }
             else if (interfaceName.find("ServiceReady") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.ServiceReady.States.Unknown";
                 manager.serviceEntities.push_back(
-                    std::move(std::make_unique<
-                              configurable_state_manager::CategoryServiceReady>(
+                    std::make_unique<
+                        configurable_state_manager::CategoryServiceReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        stateProperty, defaultState, errorState, states)));
+                        stateProperty, defaultState, errorState, states));
             }
             else if (interfaceName.find("State.Chassis") != std::string::npos)
             {
                 errorState =
                     "xyz.openbmc_project.State.Chassis.PowerState.Unknown";
-                manager.powerEntities.push_back(std::move(
+                manager.powerEntities.push_back(
                     std::make_unique<
                         configurable_state_manager::CategoryChassisPowerReady>(
                         *conn, objToBeAdded.c_str(), interfaceName, featureType,
-                        stateProperty, defaultState, errorState, states)));
+                        stateProperty, defaultState, errorState, states));
             }
         }
         catch (std::exception& e)
