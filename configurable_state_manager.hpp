@@ -113,17 +113,14 @@ class StateMachineHandler
     std::string objPathCreated;
     std::vector<State> states;
     // Constructor that takes the JSON configuration as input
-    StateMachineHandler(const std::string& interfaceName,
-                        const std::string& featureType,
-                        const std::string& stateProperty,
-                        const std::string& defaultState,
-                        const std::string& errorState,
-                        const char* objPathCreated,
-                        const std::vector<State>& states) :
-        interfaceName(interfaceName),
-        featureType(featureType), stateProperty(stateProperty),
-        defaultState(defaultState), errorState(errorState),
-        objPathCreated(objPathCreated), states(states)
+    StateMachineHandler(
+        const std::string& interfaceName, const std::string& featureType,
+        const std::string& stateProperty, const std::string& defaultState,
+        const std::string& errorState, const char* objPathCreated,
+        const std::vector<State>& states) :
+        interfaceName(interfaceName), featureType(featureType),
+        stateProperty(stateProperty), defaultState(defaultState),
+        errorState(errorState), objPathCreated(objPathCreated), states(states)
     {}
     virtual ~StateMachineHandler() = default;
 
@@ -179,13 +176,11 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
         return convertStatesToString(state());
     }
 
-    CategoryFeatureReady(sdbusplus::bus::bus& bus, const char* objPath,
-                         const std::string& interfaceName,
-                         const std::string& featureType,
-                         const std::string& stateProperty,
-                         const std::string& defaultState,
-                         const std::string& errorState,
-                         const std::vector<State>& states) :
+    CategoryFeatureReady(
+        sdbusplus::bus::bus& bus, const char* objPath,
+        const std::string& interfaceName, const std::string& featureType,
+        const std::string& stateProperty, const std::string& defaultState,
+        const std::string& errorState, const std::vector<State>& states) :
         FeatureIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, stateProperty,
                             defaultState, errorState, objPath, states)
@@ -244,13 +239,11 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
         return convertStatesToString(state());
     }
 
-    CategoryServiceReady(sdbusplus::bus::bus& bus, const char* objPath,
-                         const std::string& interfaceName,
-                         const std::string& featureType,
-                         const std::string& stateProperty,
-                         const std::string& defaultState,
-                         const std::string& errorState,
-                         const std::vector<State>& states) :
+    CategoryServiceReady(
+        sdbusplus::bus::bus& bus, const char* objPath,
+        const std::string& interfaceName, const std::string& featureType,
+        const std::string& stateProperty, const std::string& defaultState,
+        const std::string& errorState, const std::vector<State>& states) :
         ServiceIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, stateProperty,
                             defaultState, errorState, objPath, states)
@@ -307,13 +300,11 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
         return convertStatesToString(state());
     }
 
-    CategoryInterfaceReady(sdbusplus::bus_t& bus, const char* objPath,
-                           const std::string& interfaceName,
-                           const std::string& featureType,
-                           const std::string& stateProperty,
-                           const std::string& defaultState,
-                           const std::string& errorState,
-                           const std::vector<State>& states) :
+    CategoryInterfaceReady(
+        sdbusplus::bus_t& bus, const char* objPath,
+        const std::string& interfaceName, const std::string& featureType,
+        const std::string& stateProperty, const std::string& defaultState,
+        const std::string& errorState, const std::vector<State>& states) :
         InterfaceIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, stateProperty,
                             defaultState, errorState, objPath, states)
@@ -370,13 +361,11 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
         return convertStatesToString(state());
     }
 
-    CategoryDeviceReady(sdbusplus::bus_t& bus, const char* objPath,
-                        const std::string& interfaceName,
-                        const std::string& featureType,
-                        const std::string& stateProperty,
-                        const std::string& defaultState,
-                        const std::string& errorState,
-                        const std::vector<State>& states) :
+    CategoryDeviceReady(
+        sdbusplus::bus_t& bus, const char* objPath,
+        const std::string& interfaceName, const std::string& featureType,
+        const std::string& stateProperty, const std::string& defaultState,
+        const std::string& errorState, const std::vector<State>& states) :
         DeviceIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, stateProperty,
                             defaultState, errorState, objPath, states)
@@ -427,13 +416,11 @@ class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
         return convertPowerStateToString(currentPowerState());
     }
 
-    CategoryChassisPowerReady(sdbusplus::bus_t& bus, const char* objPath,
-                              const std::string& interfaceName,
-                              const std::string& featureType,
-                              const std::string& stateProperty,
-                              const std::string& defaultState,
-                              const std::string& errorState,
-                              const std::vector<State>& states) :
+    CategoryChassisPowerReady(
+        sdbusplus::bus_t& bus, const char* objPath,
+        const std::string& interfaceName, const std::string& featureType,
+        const std::string& stateProperty, const std::string& defaultState,
+        const std::string& errorState, const std::vector<State>& states) :
         ChassisIntfInherit(bus, objPath),
         StateMachineHandler(interfaceName, featureType, stateProperty,
                             defaultState, errorState, objPath, states)

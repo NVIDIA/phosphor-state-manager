@@ -53,11 +53,10 @@ constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
 constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 
 phosphor::state::manager::utils::PropertyValue
-    StateMachineHandler::handleTimeoutRetries(sdbusplus::bus::bus& bus,
-                                              const std::string& service,
-                                              const std::string& objectPath,
-                                              const std::string& interface,
-                                              const std::string& property)
+    StateMachineHandler::handleTimeoutRetries(
+        sdbusplus::bus::bus& bus, const std::string& service,
+        const std::string& objectPath, const std::string& interface,
+        const std::string& property)
 {
     constexpr int maxRetries = 4; // Maximum number of retries
     int retryCount = 0;           // Track retry attempts
@@ -160,57 +159,17 @@ void StateMachineHandler::init(sdbusplus::bus::bus& bus)
     {
         for (const auto& objPath : objects)
         {
-            auto matchPtr = std::make_unique<sdbusplus::bus::match::match>(
-                sdbusplus::bus::match::match(
-                    bus,
-                    sdbusplus::bus::match::rules::propertiesChanged(
-                        std::string(objPath), ifaceName),
-                    [&](sdbusplus::message::message& msg) {
-                try
-                {
-                    // Execute the transition when properties change
-                    executeTransition();
-                    // for logging
-                    log<level::INFO>(
-                        std::format(
-                            "Property change triggered state transition, Sender: '{}'",
-                            msg.get_sender())
-                            .c_str());
-                }
-                catch (const sdbusplus::exception::SdBusError& e)
-                {
-                    log<level::ERR>("Unable to execute Transiton",
-                                    entry("ERR=%s msg=", e.what()));
-                }
-            }));
-
-            eventHandlerMatcher.push_back(std::move(matchPtr));
-
-            // create interface added matchPtr
-            auto matchPtr2 = std::make_unique<sdbusplus::bus::match::match>(
-                sdbusplus::bus::match::match(
-                    bus,
-                    sdbusplus::bus::match::rules::interfacesAdded() +
-                        sdbusplus::bus::match::rules::argNpath(
-                            0, std::string(objPath)),
-                    [this, ifaceName](sdbusplus::message::message& msg) {
-                std::map<std::string,
-                         std::map<std::string, std::variant<std::string>>>
-                    interfacesMap;
-                sdbusplus::message::object_path path;
-                msg.read(path, interfacesMap);
-
-                for (auto& interface : interfacesMap)
-                {
-                    if (interface.first != ifaceName)
-                    {
-                        continue;
-                    }
-
+            auto matchPtr = std::make_unique<
+                sdbusplus::bus::match::match>(sdbusplus::bus::match::match(
+                bus,
+                sdbusplus::bus::match::rules::propertiesChanged(
+                    std::string(objPath), ifaceName),
+                [&](sdbusplus::message::message& msg) {
                     try
                     {
                         // Execute the transition when properties change
                         executeTransition();
+                        // for logging
                         log<level::INFO>(
                             std::format(
                                 "Property change triggered state transition, Sender: '{}'",
@@ -219,12 +178,52 @@ void StateMachineHandler::init(sdbusplus::bus::bus& bus)
                     }
                     catch (const sdbusplus::exception::SdBusError& e)
                     {
-                        log<level::ERR>(
-                            "Unable to execute Transiton for interface added matchPtr",
-                            entry("ERR=%s msg=", e.what()));
+                        log<level::ERR>("Unable to execute Transiton",
+                                        entry("ERR=%s msg=", e.what()));
                     }
-                }
-            }));
+                }));
+
+            eventHandlerMatcher.push_back(std::move(matchPtr));
+
+            // create interface added matchPtr
+            auto matchPtr2 = std::make_unique<
+                sdbusplus::bus::match::match>(sdbusplus::bus::match::match(
+                bus,
+                sdbusplus::bus::match::rules::interfacesAdded() +
+                    sdbusplus::bus::match::rules::argNpath(
+                        0, std::string(objPath)),
+                [this, ifaceName](sdbusplus::message::message& msg) {
+                    std::map<std::string,
+                             std::map<std::string, std::variant<std::string>>>
+                        interfacesMap;
+                    sdbusplus::message::object_path path;
+                    msg.read(path, interfacesMap);
+
+                    for (auto& interface : interfacesMap)
+                    {
+                        if (interface.first != ifaceName)
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            // Execute the transition when properties change
+                            executeTransition();
+                            log<level::INFO>(
+                                std::format(
+                                    "Property change triggered state transition, Sender: '{}'",
+                                    msg.get_sender())
+                                    .c_str());
+                        }
+                        catch (const sdbusplus::exception::SdBusError& e)
+                        {
+                            log<level::ERR>(
+                                "Unable to execute Transiton for interface added matchPtr",
+                                entry("ERR=%s msg=", e.what()));
+                        }
+                    }
+                }));
 
             // insert interface added matchPtr
             eventHandlerMatcher.push_back(std::move(matchPtr2));
