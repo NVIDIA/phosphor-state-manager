@@ -110,13 +110,12 @@ PropertyValue getPropertyV2(sdbusplus::bus::bus& bus,
  */
 bool isBmcReady(sdbusplus::bus_t& bus);
 
-/** @brief Wait for power restore delay and check for BMC_READY.
+/** @brief Wait BMC to enter ready state or timeout reached.
  *
  * @param[in] bus          - The Dbus bus object
  * @param[in] timeout      - Timeout in second
  */
-bool waitForPowerDelayRestore(sdbusplus::bus_t& bus,
-                              std::chrono::seconds timeout);
+bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout);
 
 #ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 /** @brief Determine if any firmware being updated

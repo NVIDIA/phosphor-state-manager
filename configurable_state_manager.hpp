@@ -151,9 +151,9 @@ class StateMachineHandler
 class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
 {
   public:
-    static PropertiesVariant
-        getPropertyValue(const std::string& stateProperty,
-                         const std::string& propertyValueString)
+    static PropertiesVariant getPropertyValue(
+        const std::string& stateProperty,
+        const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -212,9 +212,9 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
 class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
 {
   public:
-    static PropertiesVariant
-        getPropertyValue(const std::string& stateProperty,
-                         const std::string& propertyValueString)
+    static PropertiesVariant getPropertyValue(
+        const std::string& stateProperty,
+        const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -275,9 +275,9 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
 class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
 {
   public:
-    static PropertiesVariant
-        getPropertyValue(const std::string& stateProperty,
-                         const std::string& propertyValueString)
+    static PropertiesVariant getPropertyValue(
+        const std::string& stateProperty,
+        const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -336,9 +336,9 @@ class CategoryInterfaceReady : public InterfaceIntfInherit, StateMachineHandler
 class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
 {
   public:
-    static PropertiesVariant
-        getPropertyValue(const std::string& stateProperty,
-                         const std::string& propertyValueString)
+    static PropertiesVariant getPropertyValue(
+        const std::string& stateProperty,
+        const std::string& propertyValueString)
     {
         if (stateProperty == "State")
         {
@@ -397,8 +397,8 @@ class CategoryDeviceReady : public DeviceIntfInherit, StateMachineHandler
 class CategoryChassisPowerReady : public ChassisIntfInherit, StateMachineHandler
 {
   public:
-    static PropertiesVariant
-        getPropertyValue(const std::string& propertyValueString)
+    static PropertiesVariant getPropertyValue(
+        const std::string& propertyValueString)
     {
         return convertPowerStateFromString(propertyValueString);
     }
