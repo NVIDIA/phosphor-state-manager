@@ -53,6 +53,12 @@ conf.set10(
     get_option('only-run-apr-on-power-loss'),
 )
 
+conf.set10('RUN_APR_ON_PINHOLE_RESET', get_option('run-apr-on-pinhole-reset'))
+
+conf.set10('RUN_APR_ON_WATCHDOG_RESET', get_option('run-apr-on-watchdog-reset'))
+
+conf.set10('RUN_APR_ON_SOFTWARE_RESET', get_option('run-apr-on-software-reset'))
+
 conf.set_quoted('SYSFS_TPM_DEVICE_PATH', get_option('sysfs-tpm-device-path'))
 
 conf.set_quoted(
@@ -75,6 +81,10 @@ conf.set_quoted('HOST_RUNNING_FILE', '/run/openbmc/host@{}-on')
 conf.set_quoted('CHASSIS_ON_FILE', '/run/openbmc/chassis@{}-on')
 
 conf.set_quoted('OBMC_STANDBY_TARGET', get_option('obmc-standby-target'))
+conf.set(
+    'CHECK_FWUPDATE_BEFORE_DO_TRANSITION',
+    get_option('check-fwupdate-before-do-transition').allowed(),
+)
 
 configure_file(output: 'config.h', configuration: conf)
 
@@ -110,12 +120,20 @@ if (get_option('force-off').allowed())
     add_project_arguments('-DENABLE_FORCE_OFF', language: 'cpp')
 endif
 
+if (get_option('apply-power-policy-bmc-ready').allowed())
+    add_project_arguments('-DAPPLY_POWER_POLICY_WHEN_BMC_READY', language: 'cpp')
+endif
+
 nlohmann_json_dep = dependency('nlohmann_json', include_type: 'system')
 sdbusplus = dependency('sdbusplus')
 sdeventplus = dependency('sdeventplus')
 phosphorlogging = dependency('phosphor-logging')
 phosphordbusinterfaces = dependency('phosphor-dbus-interfaces')
-libgpiod = dependency('libgpiod', version: '>=1.4.1')
+libgpiod = dependency(
+    'libgpiod',
+    version: '>=1.4.1',
+    default_options: ['bindings=cxx'],
+)
 
 if cpp.has_header('CLI/CLI.hpp')
     CLI11 = declare_dependency()
@@ -293,11 +311,13 @@ executable(
     install: true,
 )
 
-install_data(
-    'obmcutil',
-    install_mode: 'rwxr-xr-x',
-    install_dir: get_option('bindir'),
-)
+if get_option('install-utils').allowed()
+    install_data(
+        'obmcutil',
+        install_mode: 'rwxr-xr-x',
+        install_dir: get_option('bindir'),
+    )
+endif
 
 install_data(
     'scripts/host-reboot',
@@ -306,7 +326,7 @@ install_data(
 )
 
 systemd = dependency('systemd')
-systemd_system_unit_dir = systemd.get_variable('systemdsystemunitdir')
+systemd_system_unit_dir = systemd.get_variable('systemd_system_unit_dir')
 subdir('service_files')
 subdir('target_files')
 
@@ -321,14 +341,29 @@ build_tests = get_option('tests')
 
 # If test coverage of source files within the root directory are wanted,
 # need to define and build the tests from here
-if not build_tests.disabled()
-    gtest = dependency(
-        'gtest',
-        main: true,
-        disabler: true,
-        required: build_tests,
-    )
-    gmock = dependency('gmock', disabler: true, required: build_tests)
+if build_tests.allowed()
+    gtest = dependency('gtest', main: true, disabler: true, required: false)
+    gmock = dependency('gmock', disabler: true, required: false)
+
+    if not gtest.found() or not gmock.found()
+        gtest_proj = import('cmake').subproject('googletest', required: false)
+        if gtest_proj.found()
+            gtest = declare_dependency(
+                dependencies: [
+                    dependency('threads'),
+                    gtest_proj.dependency('gtest'),
+                    gtest_proj.dependency('gtest_main'),
+                ],
+            )
+            gmock = gtest_proj.dependency('gmock')
+        else
+            assert(
+                not get_option('tests').enabled(),
+                'Googletest is required if tests are enabled',
+            )
+        endif
+    endif
+
     test(
         'test_systemd_parser',
         executable(

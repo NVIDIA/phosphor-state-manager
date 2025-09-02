@@ -8,6 +8,7 @@
 #include <xyz/openbmc_project/Dump/Create/client.hpp>
 #include <xyz/openbmc_project/Logging/Create/client.hpp>
 #include <xyz/openbmc_project/ObjectMapper/client.hpp>
+#include <xyz/openbmc_project/Software/ActivationBlocksTransition/client.hpp>
 #include <xyz/openbmc_project/State/BMC/client.hpp>
 
 #include <chrono>
@@ -49,6 +50,8 @@ PropertyValue
 }
 
 using ObjectMapper = sdbusplus::client::xyz::openbmc_project::ObjectMapper<>;
+using ActBlockTrans = sdbusplus::client::xyz::openbmc_project::software::
+    ActivationBlocksTransition<>;
 
 void subscribeToSystemdSignals(sdbusplus::bus_t& bus)
 {
@@ -269,12 +272,53 @@ bool isBmcReady(sdbusplus::bus_t& bus)
     return true;
 }
 
-bool waitForPowerDelayRestore(sdbusplus::bus_t& bus,
-                              std::chrono::seconds timeout)
+bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout)
 {
-    std::this_thread::sleep_for(timeout);
-    return isBmcReady(bus);
+    while (timeout.count() != 0)
+    {
+        timeout--;
+        if (isBmcReady(bus))
+        {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    return false;
 }
+
+#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
+bool isFirmwareUpdating(sdbusplus::bus_t& bus)
+{
+    /*
+     * This method looks for ActivationBlocksTransition interface, if any object
+     * path is including this interface, the Transition action should be
+     * prevented.
+     */
+    auto mapper = bus.new_method_call(
+        ObjectMapper::default_service, ObjectMapper::instance_path,
+        ObjectMapper::interface, "GetSubTreePaths");
+
+    mapper.append("/", 0, std::vector<std::string>({ActBlockTrans::interface}));
+
+    std::vector<std::string> mapperResponse;
+
+    try
+    {
+        auto mapperResponseMsg = bus.call(mapper);
+
+        mapperResponseMsg.read(mapperResponse);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        error("Error in mapper call with root path, interface "
+              "ActivationBlocksTransition, and exception {ERROR}",
+              "ERROR", e);
+        return false;
+    }
+
+    return !mapperResponse.empty();
+}
+#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
 } // namespace utils
 } // namespace manager

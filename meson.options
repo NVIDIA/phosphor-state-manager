@@ -208,3 +208,45 @@ option(
     value: 'multi-user.target',
     description: 'The default obmc standby target.',
 )
+
+option(
+    'check-fwupdate-before-do-transition',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Only do transition request when no firmware being updated',
+)
+
+option(
+    'apply-power-policy-bmc-ready',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Apply the Power policy right after BMC_READY',
+)
+
+option(
+    'install-utils',
+    type: 'feature',
+    value: 'enabled',
+    description: 'Install the obmcutil script',
+)
+
+option(
+    'run-apr-on-pinhole-reset',
+    type: 'boolean',
+    value: true,
+    description: 'run APR when BMC has been rebooted due to pinhole action',
+)
+
+option(
+    'run-apr-on-watchdog-reset',
+    type: 'boolean',
+    value: true,
+    description: 'run APR when BMC has been rebooted due to watchdog',
+)
+
+option(
+    'run-apr-on-software-reset',
+    type: 'boolean',
+    value: true,
+    description: 'run APR when BMC has been rebooted due to software request',
+)

@@ -85,23 +85,40 @@ int main(int argc, char** argv)
     auto bmcPath = sdbusplus::message::object_path(BMC::namespace_path::value) /
                    BMC::namespace_path::bmc;
 
+#if !(RUN_APR_ON_PINHOLE_RESET && RUN_APR_ON_WATCHDOG_RESET &&                 \
+      RUN_APR_ON_SOFTWARE_RESET)
     auto bmcRebootCause =
         sdbusplus::message::convert_from_string<BMC::RebootCause>(
             phosphor::state::manager::utils::getProperty(
                 bus, bmcPath.str, BMCState::interface, "LastRebootCause"));
 
+#if !RUN_APR_ON_PINHOLE_RESET
     if (bmcRebootCause == BMC::RebootCause::PinholeReset)
     {
         info(
             "BMC was reset due to pinhole reset, no power restore policy will be run");
         return 0;
     }
-    else if (bmcRebootCause == BMC::RebootCause::Watchdog)
+#endif // RUN_APR_ON_PINHOLE_RESET
+
+#if !RUN_APR_ON_WATCHDOG_RESET
+    if (bmcRebootCause == BMC::RebootCause::Watchdog)
+    {
+        info(
+            "BMC was reset due to watchdog, no power restore policy will be run");
+        return 0;
+    }
+#endif // RUN_APR_ON_WATCHDOG_RESET
+
+#if !RUN_APR_ON_SOFTWARE_RESET
+    if (bmcRebootCause == BMC::RebootCause::Software)
     {
         info(
             "BMC was reset due to cold reset, no power restore policy will be run");
         return 0;
     }
+#endif // RUN_APR_ON_SOFTWARE_RESET
+#endif
 
     /* The logic here is to first check the one-time PowerRestorePolicy setting.
      * If this property is not the default then look at the persistent
@@ -172,7 +189,14 @@ int main(int argc, char** argv)
         if (RestorePolicy::Policy::AlwaysOn ==
             RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            utils::waitForPowerDelayRestore(bus, powerRestoreDelaySec);
+            info(
+                "power_policy=ALWAYS_POWER_ON, powering host on ({DELAY}s delay)",
+                "DELAY", powerRestoreDelaySec.count());
+#ifdef APPLY_POWER_POLICY_WHEN_BMC_READY
+            utils::waitBmcReady(bus, powerRestoreDelaySec);
+#else
+            std::this_thread::sleep_for(powerRestoreDelayUsec);
+#endif
             // In case no value of restart cause was saved, set to
             // PowerPolicyAlwaysOn
             if (server::Host::convertRestartCauseFromString(
@@ -185,7 +209,7 @@ int main(int argc, char** argv)
                     bus, hostPath, HostState::interface, "RestartCause",
                     convertForMessage(
                         server::Host::RestartCause::PowerPolicyAlwaysOn));
-            }
+            };
             phosphor::state::manager::utils::setProperty(
                 bus, hostPath, HostState::interface, "RequestedHostTransition",
                 convertForMessage(server::Host::Transition::On));
@@ -207,7 +231,11 @@ int main(int argc, char** argv)
             info(
                 "power_policy=ALWAYS_POWER_OFF, set requested state to off ({DELAY}s delay)",
                 "DELAY", powerRestoreDelaySec.count());
-            utils::waitForPowerDelayRestore(bus, powerRestoreDelaySec);
+#ifdef APPLY_POWER_POLICY_WHEN_BMC_READY
+            utils::waitBmcReady(bus, powerRestoreDelaySec);
+#else
+            std::this_thread::sleep_for(powerRestoreDelayUsec);
+#endif
             // Read last requested state and re-request it to execute it
             auto hostReqState = phosphor::state::manager::utils::getProperty(
                 bus, hostPath, HostState::interface, "RequestedHostTransition");
@@ -223,7 +251,13 @@ int main(int argc, char** argv)
         else if (RestorePolicy::Policy::Restore ==
                  RestorePolicy::convertPolicyFromString(powerPolicy))
         {
-            utils::waitForPowerDelayRestore(bus, powerRestoreDelaySec);
+            info("power_policy=RESTORE, restoring last state ({DELAY}s delay)",
+                 "DELAY", powerRestoreDelaySec.count());
+#ifdef APPLY_POWER_POLICY_WHEN_BMC_READY
+            utils::waitBmcReady(bus, powerRestoreDelaySec);
+#else
+            std::this_thread::sleep_for(powerRestoreDelayUsec);
+#endif
             // In case no value of restart cause was saved, set to
             // PowerPolicyPreviousState
             if (server::Host::convertRestartCauseFromString(
