@@ -292,8 +292,11 @@ int main(int argc, char** argv)
     }
     catch (const sdbusplus::exception_t& e)
     {
-        error("Error in PowerRestorePolicy Get: {ERROR}", "ERROR", e);
-        elog<InternalFailure>();
+        error("Error during power restore policy application: {ERROR}", "ERROR",
+              e);
+        info(
+            "Skipping power restore this boot due to D-Bus error (e.g. service unavailable, transition rejected)");
+        return 0;
     }
 
     return 0;
