@@ -58,14 +58,14 @@ class Host : public HostInherit
         systemdSignalJobRemoved(
             bus,
             sdbusRule::type::signal() + sdbusRule::member("JobRemoved") +
-                sdbusRule::path("/org/freedesktop/systemd1") +
-                sdbusRule::interface("org.freedesktop.systemd1.Manager"),
+                sdbusRule::path(SYSTEMD_OBJ_PATH) +
+                sdbusRule::interface(SYSTEMD_MANAGER_INTERFACE),
             [this](sdbusplus::message_t& m) { sysStateChangeJobRemoved(m); }),
         systemdSignalJobNew(
             bus,
             sdbusRule::type::signal() + sdbusRule::member("JobNew") +
-                sdbusRule::path("/org/freedesktop/systemd1") +
-                sdbusRule::interface("org.freedesktop.systemd1.Manager"),
+                sdbusRule::path(SYSTEMD_OBJ_PATH) +
+                sdbusRule::interface(SYSTEMD_MANAGER_INTERFACE),
             [this](sdbusplus::message_t& m) { sysStateChangeJobNew(m); }),
         settings(bus, id), id(id), objPath(objPath)
     {
@@ -94,6 +94,9 @@ class Host : public HostInherit
 
     /** @brief Set Value for boot progress */
     ProgressStages bootProgress(ProgressStages value) override;
+
+    /** @brief Updated whenever BootProgress is updated */
+    uint64_t bootProgressLastUpdate(uint64_t value) override;
 
     /** @brief Set Value for Operating System Status */
     OSStatus operatingSystemState(OSStatus value) override;

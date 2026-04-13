@@ -2,6 +2,7 @@
 
 #include "systemd_service_parser.hpp"
 #include "systemd_target_parser.hpp"
+#include "utils.hpp"
 
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
@@ -14,6 +15,7 @@ namespace state
 {
 namespace manager
 {
+
 /** @class SystemdTargetLogging
  *  @brief Object to monitor input systemd targets and create corresponding
  *         input errors for on failures
@@ -36,10 +38,9 @@ class SystemdTargetLogging
             bus,
             sdbusplus::bus::match::rules::type::signal() +
                 sdbusplus::bus::match::rules::member("JobRemoved") +
-                sdbusplus::bus::match::rules::path(
-                    "/org/freedesktop/systemd1") +
+                sdbusplus::bus::match::rules::path(SYSTEMD_OBJ_PATH) +
                 sdbusplus::bus::match::rules::interface(
-                    "org.freedesktop.systemd1.Manager"),
+                    SYSTEMD_MANAGER_INTERFACE),
             [this](sdbusplus::message_t& m) { systemdUnitChange(m); }),
         systemdNameOwnedChangedSignal(
             bus, sdbusplus::bus::match::rules::nameOwnerChanged(),

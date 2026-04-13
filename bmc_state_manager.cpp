@@ -7,10 +7,15 @@
 
 #include <gpiod.h>
 
+#include <phosphor-logging/commit.hpp>
 #include <phosphor-logging/elog-errors.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
+#include <xyz/openbmc_project/State/BMC/common.hpp>
+#include <xyz/openbmc_project/State/BMC/event.hpp>
 
+#include <cerrno>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -40,19 +45,15 @@ const std::map<server::BMC::Transition, const char*> SYSTEMD_TABLE = {
     {server::BMC::Transition::Reboot, "reboot.target"},
     {server::BMC::Transition::PowerOff, "poweroff.target"}};
 
-constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
-constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
-constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
-constexpr auto SYSTEMD_PRP_INTERFACE = "org.freedesktop.DBus.Properties";
-
 void BMC::bmcIsQuiesced()
 {
     this->currentBMCState(BMCState::Quiesced);
 
     // There is no getting out of Quiesced once entered (other then BMC
     // reboot) so stop watching for signals
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "Unsubscribe");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "Unsubscribe");
 
     try
     {
@@ -72,8 +73,9 @@ std::string BMC::getUnitState(const std::string& unitToCheck)
     std::variant<std::string> currentState;
     sdbusplus::message::object_path unitTargetPath;
 
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "GetUnit");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "GetUnit");
 
     method.append(unitToCheck);
 
@@ -93,9 +95,9 @@ std::string BMC::getUnitState(const std::string& unitToCheck)
     method = this->bus.new_method_call(
         SYSTEMD_SERVICE,
         static_cast<const std::string&>(unitTargetPath).c_str(),
-        SYSTEMD_PRP_INTERFACE, "Get");
+        PROPERTY_INTERFACE, "Get");
 
-    method.append("org.freedesktop.systemd1.Unit", "ActiveState");
+    method.append(SYSTEMD_UNIT_INTERFACE, "ActiveState");
 
     try
     {
@@ -170,8 +172,9 @@ bool BMC::executeTransition(const Transition tranReq)
         this->currentBMCState(BMCState::NotReady);
         this->stateSignal.reset();
 
-        auto method = this->bus.new_method_call(
-            SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH, SYSTEMD_INTERFACE, "Reboot");
+        auto method =
+            this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                      SYSTEMD_MANAGER_INTERFACE, "Reboot");
         try
         {
             this->bus.call(method);
@@ -193,8 +196,9 @@ bool BMC::executeTransition(const Transition tranReq)
 
         const auto& sysdUnit = iter->second;
 
-        auto method = this->bus.new_method_call(
-            SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH, SYSTEMD_INTERFACE, "StartUnit");
+        auto method =
+            this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                      SYSTEMD_MANAGER_INTERFACE, "StartUnit");
         // The only valid transition is reboot and that
         // needs to be irreversible once started
 
@@ -252,17 +256,18 @@ BMC::Transition BMC::requestedBMCTransition(Transition value)
          "{REQUESTED_BMC_TRANSITION}",
          "REQUESTED_BMC_TRANSITION", value);
 
-#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
-    /*
-     * Do not do transition when the any firmware being updated
-     */
-    if ((server::BMC::Transition::Reboot == value) &&
-        (phosphor::state::manager::utils::isFirmwareUpdating(this->bus)))
+    if constexpr (CHECK_FWUPDATE_BEFORE_DO_TRANSITION)
     {
-        info("Firmware being updated, reject the transition request");
-        throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
+        /*
+         * Do not do transition when the any firmware being updated
+         */
+        if ((server::BMC::Transition::Reboot == value) &&
+            (phosphor::state::manager::utils::isFirmwareUpdating(this->bus)))
+        {
+            info("Firmware being updated, reject the transition request");
+            throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
+        }
     }
-#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
     if (executeTransition(value))
     {
@@ -280,6 +285,13 @@ BMC::BMCState BMC::currentBMCState(BMCState value)
     info("Setting the BMCState field to {CURRENT_BMC_STATE}",
          "CURRENT_BMC_STATE", value);
 
+    if (server::BMC::currentBMCState() != value)
+    {
+        using StateChanged =
+            sdbusplus::event::xyz::openbmc_project::state::BMC::StateChanged;
+        lg2::commit(StateChanged("STATE", value));
+    }
+
     return server::BMC::currentBMCState(value);
 }
 
@@ -296,8 +308,13 @@ void BMC::updateLastRebootTime()
     using namespace std::chrono;
     struct sysinfo info;
 
-    auto rc = sysinfo(&info);
-    assert(rc == 0);
+    if (sysinfo(&info) != 0)
+    {
+        auto rc = errno;
+        error("Failed to query system uptime with errno {ERRNO}", "ERRNO", rc);
+        std::abort();
+    }
+
     // Since uptime is in seconds, also get the current time in seconds.
     auto now = time_point_cast<seconds>(system_clock::now());
     auto rebootTimeTs = now - seconds(info.uptime);

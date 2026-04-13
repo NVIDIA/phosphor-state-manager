@@ -49,6 +49,7 @@ PropertyValue getPropertyV2(
     return value;
 }
 
+
 using ObjectMapper = sdbusplus::client::xyz::openbmc_project::ObjectMapper<>;
 using ActBlockTrans = sdbusplus::client::xyz::openbmc_project::software::
     ActivationBlocksTransition<>;
@@ -56,7 +57,7 @@ using ActBlockTrans = sdbusplus::client::xyz::openbmc_project::software::
 void subscribeToSystemdSignals(sdbusplus::bus_t& bus)
 {
     auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                      SYSTEMD_INTERFACE, "Subscribe");
+                                      SYSTEMD_MANAGER_INTERFACE, "Subscribe");
 
     try
     {
@@ -78,9 +79,9 @@ void subscribeToSystemdSignals(sdbusplus::bus_t& bus)
 std::string getService(sdbusplus::bus_t& bus, std::string path,
                        std::string interface)
 {
-    auto mapper = bus.new_method_call(ObjectMapper::default_service,
-                                      ObjectMapper::instance_path,
-                                      ObjectMapper::interface, "GetObject");
+    auto mapper = bus.new_method_call(
+        ObjectMapper::default_service, ObjectMapper::instance_path,
+        ObjectMapper::interface, ObjectMapper::method_names::get_object);
 
     mapper.append(path, std::vector<std::string>({interface}));
     std::vector<std::pair<std::string, std::vector<std::string>>>
@@ -195,9 +196,9 @@ void createError(
         using LoggingCreate =
             sdbusplus::client::xyz::openbmc_project::logging::Create<>;
 
-        auto method = bus.new_method_call(LoggingCreate::default_service,
-                                          LoggingCreate::instance_path,
-                                          LoggingCreate::interface, "Create");
+        auto method = bus.new_method_call(
+            LoggingCreate::default_service, LoggingCreate::instance_path,
+            LoggingCreate::interface, LoggingCreate::method_names::create);
 
         method.append(errorMsg, errLevel, additionalData);
         auto resp = bus.call(method);
@@ -226,9 +227,9 @@ void createBmcDump(sdbusplus::bus_t& bus [[maybe_unused]])
         sdbusplus::message::object_path(DumpCreate::namespace_path::value) /
         DumpCreate::namespace_path::bmc;
 
-    auto method =
-        bus.new_method_call(DumpCreate::default_service, dumpPath.str.c_str(),
-                            DumpCreate::interface, "CreateDump");
+    auto method = bus.new_method_call(
+        DumpCreate::default_service, dumpPath.str.c_str(),
+        DumpCreate::interface, DumpCreate::method_names::create_dump);
     method.append(
         std::vector<
             std::pair<std::string, std::variant<std::string, uint64_t>>>());
@@ -260,8 +261,8 @@ bool isBmcReady(sdbusplus::bus_t& bus)
     auto bmcPath = sdbusplus::message::object_path(BMC::namespace_path::value) /
                    BMC::namespace_path::bmc;
 
-    auto bmcState =
-        getProperty(bus, bmcPath.str, BMC::interface, "CurrentBMCState");
+    auto bmcState = getProperty(bus, bmcPath.str, BMC::interface,
+                                BMC::property_names::current_bmc_state);
 
     if (sdbusplus::message::convert_from_string<BMC::BMCState>(bmcState) !=
         BMC::BMCState::Ready)
@@ -286,7 +287,6 @@ bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout)
     return false;
 }
 
-#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 bool isFirmwareUpdating(sdbusplus::bus_t& bus)
 {
     /*
@@ -296,7 +296,8 @@ bool isFirmwareUpdating(sdbusplus::bus_t& bus)
      */
     auto mapper = bus.new_method_call(
         ObjectMapper::default_service, ObjectMapper::instance_path,
-        ObjectMapper::interface, "GetSubTreePaths");
+        ObjectMapper::interface,
+        ObjectMapper::method_names::get_sub_tree_paths);
 
     mapper.append("/", 0, std::vector<std::string>({ActBlockTrans::interface}));
 
@@ -318,7 +319,6 @@ bool isFirmwareUpdating(sdbusplus::bus_t& bus)
 
     return !mapperResponse.empty();
 }
-#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
 } // namespace utils
 } // namespace manager

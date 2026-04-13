@@ -21,6 +21,7 @@
 #include <xyz/openbmc_project/Control/Power/RestorePolicy/server.hpp>
 #include <xyz/openbmc_project/State/Host/error.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -54,12 +55,7 @@ using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
 constexpr auto ACTIVE_STATE = "active";
 constexpr auto ACTIVATING_STATE = "activating";
 
-constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
-constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
-constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
-
-constexpr auto SYSTEMD_PROPERTY_IFACE = "org.freedesktop.DBus.Properties";
-constexpr auto SYSTEMD_INTERFACE_UNIT = "org.freedesktop.systemd1.Unit";
+constexpr auto AUTO_REBOOT_PROPERTY = "AutoReboot";
 
 void Host::determineInitialState()
 {
@@ -81,6 +77,7 @@ void Host::determineInitialState()
     {
         // set to default value.
         server::Host::requestedHostTransition(Transition::Off, true);
+        reboot::RebootAttempts::retryAttempts(BOOT_COUNT_MAX_ALLOWED);
     }
     return;
 }
@@ -151,8 +148,9 @@ void Host::executeTransition(Transition tranReq)
 {
     const auto& sysdUnit = getTarget(tranReq);
 
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "StartUnit");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "StartUnit");
 
     method.append(sysdUnit);
     method.append("replace");
@@ -167,8 +165,9 @@ bool Host::stateActive(const std::string& target)
     std::variant<std::string> currentState;
     sdbusplus::message::object_path unitTargetPath;
 
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "GetUnit");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "GetUnit");
 
     method.append(target);
 
@@ -186,9 +185,9 @@ bool Host::stateActive(const std::string& target)
     method = this->bus.new_method_call(
         SYSTEMD_SERVICE,
         static_cast<const std::string&>(unitTargetPath).c_str(),
-        SYSTEMD_PROPERTY_IFACE, "Get");
+        PROPERTY_INTERFACE, "Get");
 
-    method.append(SYSTEMD_INTERFACE_UNIT, "ActiveState");
+    method.append(SYSTEMD_UNIT_INTERFACE, "ActiveState");
 
     try
     {
@@ -217,19 +216,19 @@ bool Host::isAutoReboot()
      */
     auto methodOneTime = bus.new_method_call(
         settings.service(settings.autoReboot, autoRebootIntf).c_str(),
-        settings.autoRebootOneTime.c_str(), SYSTEMD_PROPERTY_IFACE, "Get");
-    methodOneTime.append(autoRebootIntf, "AutoReboot");
+        settings.autoRebootOneTime.c_str(), PROPERTY_INTERFACE, "Get");
+    methodOneTime.append(autoRebootIntf, AUTO_REBOOT_PROPERTY);
 
     auto methodUserSetting = bus.new_method_call(
         settings.service(settings.autoReboot, autoRebootIntf).c_str(),
-        settings.autoReboot.c_str(), SYSTEMD_PROPERTY_IFACE, "Get");
-    methodUserSetting.append(autoRebootIntf, "AutoReboot");
+        settings.autoReboot.c_str(), PROPERTY_INTERFACE, "Get");
+    methodUserSetting.append(autoRebootIntf, AUTO_REBOOT_PROPERTY);
 
     try
     {
         auto reply = bus.call(methodOneTime);
-        std::variant<bool> result;
-        reply.read(result);
+        auto result = reply.unpack<std::variant<bool>>();
+
         auto autoReboot = std::get<bool>(result);
 
         if (!autoReboot)
@@ -321,10 +320,18 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message_t& msg)
         // This file is used to indicate to host related systemd services
         // that the host is already running and they should skip running.
         // Once the host state is back to running we can clear this file.
-        std::string hostFile = std::format(HOST_RUNNING_FILE, 0);
+        std::string hostFile = std::format(HOST_RUNNING_FILE, id);
         if (std::filesystem::exists(hostFile))
         {
-            std::filesystem::remove(hostFile);
+            try
+            {
+                std::filesystem::remove(hostFile);
+            }
+            catch (const std::filesystem::filesystem_error& e)
+            {
+                error("Failed to remove host running file {FILE}: {ERROR}",
+                      "FILE", hostFile, "ERROR", e.what());
+            }
         }
     }
     else if ((newStateUnit == getTarget(server::Host::HostState::Quiesced)) &&
@@ -417,16 +424,18 @@ bool Host::deserialize()
 
 Host::Transition Host::requestedHostTransition(Transition value)
 {
-    info("Host state transition request of {REQ}", "REQ", value);
+    info("Host{HOST_ID} state transition request of {REQ}", "HOST_ID", id,
+         "REQ", value);
 
-#if ONLY_ALLOW_BOOT_WHEN_BMC_READY
-    if ((value != Transition::Off) && (!utils::isBmcReady(this->bus)))
+    if constexpr (ONLY_ALLOW_BOOT_WHEN_BMC_READY)
     {
-        info("BMC State is not Ready so no host on operations allowed");
-        throw sdbusplus::xyz::openbmc_project::State::Host::Error::
-            BMCNotReady();
+        if ((value != Transition::Off) && (!utils::isBmcReady(this->bus)))
+        {
+            info("BMC State is not Ready so no host on operations allowed");
+            throw sdbusplus::xyz::openbmc_project::State::Host::Error::
+                BMCNotReady();
+        }
     }
-#endif
 
 #if !ENABLE_GRACEFUL_WARM_REBOOT
     if (value == Transition::GracefulWarmReboot)
@@ -459,16 +468,18 @@ Host::Transition Host::requestedHostTransition(Transition value)
     // check of this count will occur
     if (value != server::Host::Transition::Off)
     {
-#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
-        /*
-         * Do not do transition when the any firmware being updated
-         */
-        if (phosphor::state::manager::utils::isFirmwareUpdating(this->bus))
+        if constexpr (CHECK_FWUPDATE_BEFORE_DO_TRANSITION)
         {
-            info("Firmware being updated, reject the transition request");
-            throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
+            /*
+             * Do not do transition when the any firmware being updated
+             */
+            if (phosphor::state::manager::utils::isFirmwareUpdating(this->bus))
+            {
+                info("Firmware being updated, reject the transition request");
+                throw sdbusplus::xyz::openbmc_project::Common::Error::
+                    Unavailable();
+            }
         }
-#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
         decrementRebootCount();
     }
@@ -517,6 +528,19 @@ Host::Transition Host::requestedHostTransition(Transition value)
 Host::ProgressStages Host::bootProgress(ProgressStages value)
 {
     auto retVal = bootprogress::Progress::bootProgress(value);
+
+    // Update the BootProgressLastUpdate anytime BootProgress is updated
+    auto timeStamp = std::chrono::duration_cast<std::chrono::microseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+    this->bootProgressLastUpdate(timeStamp);
+    serialize();
+    return retVal;
+}
+
+uint64_t Host::bootProgressLastUpdate(uint64_t value)
+{
+    auto retVal = bootprogress::Progress::bootProgressLastUpdate(value);
     serialize();
     return retVal;
 }
@@ -530,7 +554,8 @@ Host::OSStatus Host::operatingSystemState(OSStatus value)
 
 Host::HostState Host::currentHostState(HostState value)
 {
-    info("Change to Host State: {STATE}", "STATE", value);
+    info("Change to Host{HOST_ID} State: {STATE}", "HOST_ID", id, "STATE",
+         value);
     return server::Host::currentHostState(value);
 }
 

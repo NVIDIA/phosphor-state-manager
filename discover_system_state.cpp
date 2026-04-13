@@ -41,6 +41,7 @@ using BMCState = sdbusplus::client::xyz::openbmc_project::state::BMC<>;
 } // namespace state
 } // namespace phosphor
 
+
 int main(int argc, char** argv)
 {
     using namespace phosphor::logging;
@@ -90,7 +91,8 @@ int main(int argc, char** argv)
     auto bmcRebootCause =
         sdbusplus::message::convert_from_string<BMC::RebootCause>(
             phosphor::state::manager::utils::getProperty(
-                bus, bmcPath.str, BMCState::interface, "LastRebootCause"));
+                bus, bmcPath.str, BMCState::interface,
+                BMCState::property_names::last_reboot_cause));
 
 #if !RUN_APR_ON_PINHOLE_RESET
     if (bmcRebootCause == BMC::RebootCause::PinholeReset)
@@ -127,15 +129,17 @@ int main(int argc, char** argv)
      */
     auto methodOneTime = bus.new_method_call(
         settings.service(settings.powerRestorePolicy, powerRestoreIntf).c_str(),
-        settings.powerRestorePolicyOneTime.c_str(),
-        "org.freedesktop.DBus.Properties", "Get");
-    methodOneTime.append(powerRestoreIntf, "PowerRestorePolicy");
+        settings.powerRestorePolicyOneTime.c_str(), PROPERTY_INTERFACE, "Get");
+    methodOneTime.append(
+        powerRestoreIntf,
+        PowerRestorePolicy::property_names::power_restore_policy);
 
     auto methodUserSetting = bus.new_method_call(
         settings.service(settings.powerRestorePolicy, powerRestoreIntf).c_str(),
-        settings.powerRestorePolicy.c_str(), "org.freedesktop.DBus.Properties",
-        "Get");
-    methodUserSetting.append(powerRestoreIntf, "PowerRestorePolicy");
+        settings.powerRestorePolicy.c_str(), PROPERTY_INTERFACE, "Get");
+    methodUserSetting.append(
+        powerRestoreIntf,
+        PowerRestorePolicy::property_names::power_restore_policy);
 
     std::variant<std::string> result;
     try
@@ -161,17 +165,18 @@ int main(int argc, char** argv)
             info("One time set, use it and reset to default");
             phosphor::state::manager::utils::setProperty(
                 bus, settings.powerRestorePolicyOneTime, powerRestoreIntf,
-                "PowerRestorePolicy",
+                PowerRestorePolicy::property_names::power_restore_policy,
                 convertForMessage(RestorePolicy::Policy::None));
         }
 
         auto methodUserSettingDelay = bus.new_method_call(
             settings.service(settings.powerRestorePolicy, powerRestoreIntf)
                 .c_str(),
-            settings.powerRestorePolicy.c_str(),
-            "org.freedesktop.DBus.Properties", "Get");
+            settings.powerRestorePolicy.c_str(), PROPERTY_INTERFACE, "Get");
 
-        methodUserSettingDelay.append(powerRestoreIntf, "PowerRestoreDelay");
+        methodUserSettingDelay.append(
+            powerRestoreIntf,
+            PowerRestorePolicy::property_names::power_restore_delay);
 
         std::variant<uint64_t> restoreDelay;
 
@@ -183,8 +188,9 @@ int main(int argc, char** argv)
             std::chrono::duration_cast<std::chrono::seconds>(
                 powerRestoreDelayUsec);
 
-        info("Host power is off, processing power policy {POWER_POLICY}",
-             "POWER_POLICY", powerPolicy);
+        info(
+            "Host{HOST_ID} power is off, processing power policy {POWER_POLICY}",
+            "HOST_ID", hostId, "POWER_POLICY", powerPolicy);
 
         if (RestorePolicy::Policy::AlwaysOn ==
             RestorePolicy::convertPolicyFromString(powerPolicy))
@@ -211,7 +217,8 @@ int main(int argc, char** argv)
                         server::Host::RestartCause::PowerPolicyAlwaysOn));
             };
             phosphor::state::manager::utils::setProperty(
-                bus, hostPath, HostState::interface, "RequestedHostTransition",
+                bus, hostPath, HostState::interface,
+                HostState::property_names::requested_host_transition,
                 convertForMessage(server::Host::Transition::On));
         }
         // Always execute power on if AlwaysOn is set, otherwise check config
@@ -238,13 +245,14 @@ int main(int argc, char** argv)
 #endif
             // Read last requested state and re-request it to execute it
             auto hostReqState = phosphor::state::manager::utils::getProperty(
-                bus, hostPath, HostState::interface, "RequestedHostTransition");
+                bus, hostPath, HostState::interface,
+                HostState::property_names::requested_host_transition);
             if (hostReqState !=
                 convertForMessage(server::Host::Transition::Off))
             {
                 phosphor::state::manager::utils::setProperty(
                     bus, hostPath, HostState::interface,
-                    "RequestedHostTransition",
+                    HostState::property_names::requested_host_transition,
                     convertForMessage(server::Host::Transition::Off));
             }
         }
@@ -273,19 +281,21 @@ int main(int argc, char** argv)
             }
             // Read last requested state and re-request it to execute it
             auto hostReqState = phosphor::state::manager::utils::getProperty(
-                bus, hostPath, HostState::interface, "RequestedHostTransition");
+                bus, hostPath, HostState::interface,
+                HostState::property_names::requested_host_transition);
 
             // As long as the host transition is not 'Off' power on host state.
             if (hostReqState !=
                 convertForMessage(server::Host::Transition::Off))
             {
                 phosphor::state::manager::utils::setProperty(
-                    bus, hostPath, HostState::interface, "RestartCause",
+                    bus, hostPath, HostState::interface,
+                    HostState::property_names::restart_cause,
                     convertForMessage(
                         server::Host::RestartCause::PowerPolicyPreviousState));
                 phosphor::state::manager::utils::setProperty(
                     bus, hostPath, HostState::interface,
-                    "RequestedHostTransition",
+                    HostState::property_names::requested_host_transition,
                     convertForMessage(server::Host::Transition::On));
             }
         }

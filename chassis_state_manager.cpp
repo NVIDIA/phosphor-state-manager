@@ -61,15 +61,6 @@ constexpr uint TYPE_UPS = 3;
 constexpr uint STATE_FULLY_CHARGED = 4;
 constexpr uint BATTERY_LVL_FULL = 8;
 
-constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
-constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
-constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
-
-constexpr auto SYSTEMD_PROPERTY_IFACE = "org.freedesktop.DBus.Properties";
-constexpr auto SYSTEMD_INTERFACE_UNIT = "org.freedesktop.systemd1.Unit";
-
-constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
-
 void Chassis::createSystemdTargetTable()
 {
     systemdTargetTable = {
@@ -106,7 +97,7 @@ void Chassis::determineInitialState()
     std::variant<int> pgood = -1;
     auto method = this->bus.new_method_call(
         "org.openbmc.control.Power", "/org/openbmc/control/power0",
-        "org.freedesktop.DBus.Properties", "Get");
+        PROPERTY_INTERFACE, "Get");
 
     method.append("org.openbmc.control.Power", "pgood");
     try
@@ -228,9 +219,9 @@ void Chassis::determineStatusOfPower()
 bool Chassis::determineStatusOfUPSPower()
 {
     // Find all implementations of the UPower interface
-    auto mapper = bus.new_method_call(ObjectMapper::default_service,
-                                      ObjectMapper::instance_path,
-                                      ObjectMapper::interface, "GetSubTree");
+    auto mapper = bus.new_method_call(
+        ObjectMapper::default_service, ObjectMapper::instance_path,
+        ObjectMapper::interface, ObjectMapper::method_names::get_sub_tree);
 
     mapper.append("/", 0, std::vector<std::string>({UPowerDevice::interface}));
 
@@ -270,8 +261,7 @@ bool Chassis::determineStatusOfUPSPower()
                 using Property = std::string;
                 using Value = std::variant<bool, uint>;
                 using PropertyMap = std::map<Property, Value>;
-                PropertyMap properties;
-                response.read(properties);
+                auto properties = response.unpack<PropertyMap>();
 
                 if (std::get<uint>(properties["Type"]) != TYPE_UPS)
                 {
@@ -335,9 +325,9 @@ bool Chassis::determineStatusOfUPSPower()
 bool Chassis::determineStatusOfPSUPower()
 {
     // Find all implementations of the PowerSystemInputs interface
-    auto mapper = bus.new_method_call(ObjectMapper::default_service,
-                                      ObjectMapper::instance_path,
-                                      ObjectMapper::interface, "GetSubTree");
+    auto mapper = bus.new_method_call(
+        ObjectMapper::default_service, ObjectMapper::instance_path,
+        ObjectMapper::interface, ObjectMapper::method_names::get_sub_tree);
 
     mapper.append("/", 0,
                   std::vector<std::string>(
@@ -374,8 +364,7 @@ bool Chassis::determineStatusOfPSUPower()
                 using Property = std::string;
                 using Value = std::variant<std::string>;
                 using PropertyMap = std::map<Property, Value>;
-                PropertyMap properties;
-                response.read(properties);
+                auto properties = response.unpack<PropertyMap>();
 
                 auto statusStr = std::get<std::string>(properties["Status"]);
                 auto status =
@@ -465,8 +454,9 @@ void Chassis::powerSysInputsChangeEvent(sdbusplus::message_t& msg)
 
 void Chassis::startUnit(const std::string& sysdUnit)
 {
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "StartUnit");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "StartUnit");
 
     method.append(sysdUnit);
     method.append("replace");
@@ -478,8 +468,9 @@ void Chassis::startUnit(const std::string& sysdUnit)
 
 void Chassis::restartUnit(const std::string& sysdUnit)
 {
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "RestartUnit");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "RestartUnit");
 
     method.append(sysdUnit);
     method.append("replace");
@@ -494,8 +485,9 @@ bool Chassis::stateActive(const std::string& target)
     std::variant<std::string> currentState;
     sdbusplus::message::object_path unitTargetPath;
 
-    auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                            SYSTEMD_INTERFACE, "GetUnit");
+    auto method =
+        this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                  SYSTEMD_MANAGER_INTERFACE, "GetUnit");
 
     method.append(target);
 
@@ -513,9 +505,9 @@ bool Chassis::stateActive(const std::string& target)
     method = this->bus.new_method_call(
         SYSTEMD_SERVICE,
         static_cast<const std::string&>(unitTargetPath).c_str(),
-        SYSTEMD_PROPERTY_IFACE, "Get");
+        PROPERTY_INTERFACE, "Get");
 
-    method.append(SYSTEMD_INTERFACE_UNIT, "ActiveState");
+    method.append(SYSTEMD_UNIT_INTERFACE, "ActiveState");
 
     try
     {
@@ -587,28 +579,31 @@ int Chassis::sysStateChange(sdbusplus::message_t& msg)
 
 Chassis::Transition Chassis::requestedPowerTransition(Transition value)
 {
-    info("Change to Chassis Requested Power State: {REQ_POWER_TRAN}",
-         "REQ_POWER_TRAN", value);
-#if ONLY_ALLOW_BOOT_WHEN_BMC_READY
-    if ((value != Transition::Off) && (!utils::isBmcReady(this->bus)))
+    info(
+        "Change to Chassis{CHASSIS_ID} Requested Power State: {REQ_POWER_TRAN}",
+        "CHASSIS_ID", id, "REQ_POWER_TRAN", value);
+    if constexpr (ONLY_ALLOW_BOOT_WHEN_BMC_READY)
     {
-        info("BMC State is not Ready so no chassis on operations allowed");
-        throw sdbusplus::xyz::openbmc_project::State::Chassis::Error::
-            BMCNotReady();
+        if ((value != Transition::Off) && (!utils::isBmcReady(this->bus)))
+        {
+            info("BMC State is not Ready so no chassis on operations allowed");
+            throw sdbusplus::xyz::openbmc_project::State::Chassis::Error::
+                BMCNotReady();
+        }
     }
-#endif
 
-#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
-    /*
-     * Do not do transition when the any firmware being updated
-     */
-    if ((value != Transition::Off) &&
-        (phosphor::state::manager::utils::isFirmwareUpdating(this->bus)))
+    if constexpr (CHECK_FWUPDATE_BEFORE_DO_TRANSITION)
     {
-        info("Firmware being updated, reject the transition request");
-        throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
+        /*
+         * Do not do transition when the any firmware being updated
+         */
+        if ((value != Transition::Off) &&
+            (phosphor::state::manager::utils::isFirmwareUpdating(this->bus)))
+        {
+            info("Firmware being updated, reject the transition request");
+            throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
+        }
     }
-#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
     startUnit(systemdTargetTable.find(value)->second);
     return server::Chassis::requestedPowerTransition(value);
@@ -617,8 +612,8 @@ Chassis::Transition Chassis::requestedPowerTransition(Transition value)
 Chassis::PowerState Chassis::currentPowerState(PowerState value)
 {
     PowerState chassisPowerState;
-    info("Change to Chassis Power State: {CUR_POWER_STATE}", "CUR_POWER_STATE",
-         value);
+    info("Change to Chassis{CHASSIS_ID} Power State: {CUR_POWER_STATE}",
+         "CHASSIS_ID", id, "CUR_POWER_STATE", value);
 
     chassisPowerState = server::Chassis::currentPowerState(value);
     if (chassisPowerState == PowerState::On)

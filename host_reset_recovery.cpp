@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "utils.hpp"
+
 #include <unistd.h>
 
 #include <phosphor-logging/elog.hpp>
@@ -32,12 +34,7 @@ using LoggingEntry = sdbusplus::client::xyz::openbmc_project::logging::Entry<>;
 
 constexpr auto HOST_STATE_SVC = "xyz.openbmc_project.State.Host";
 constexpr auto HOST_STATE_PATH = "/xyz/openbmc_project/state/host0";
-constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
-constexpr auto BOOT_PROGRESS_PROP = "BootProgress";
 
-constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
-constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
-constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 constexpr auto HOST_STATE_QUIESCE_TGT = "obmc-host-quiesce@0.target";
 
 bool wasHostBooting(sdbusplus::bus_t& bus)
@@ -48,12 +45,13 @@ bool wasHostBooting(sdbusplus::bus_t& bus)
 
         auto method = bus.new_method_call(HOST_STATE_SVC, HOST_STATE_PATH,
                                           PROPERTY_INTERFACE, "Get");
-        method.append(BootProgress::interface, BOOT_PROGRESS_PROP);
+        method.append(BootProgress::interface,
+                      BootProgress::property_names::boot_progress);
 
         auto response = bus.call(method);
 
-        std::variant<ProgressStages> bootProgressV;
-        response.read(bootProgressV);
+        auto bootProgressV = response.unpack<std::variant<ProgressStages>>();
+
         auto bootProgress = std::get<ProgressStages>(bootProgressV);
 
         if (bootProgress == ProgressStages::Unspecified)
@@ -87,9 +85,9 @@ void createErrorLog(sdbusplus::bus_t& bus)
 
         static constexpr auto errorMessage =
             "xyz.openbmc_project.State.Error.HostNotRunning";
-        auto method = bus.new_method_call(LoggingCreate::default_service,
-                                          LoggingCreate::instance_path,
-                                          LoggingCreate::interface, "Create");
+        auto method = bus.new_method_call(
+            LoggingCreate::default_service, LoggingCreate::instance_path,
+            LoggingCreate::interface, LoggingCreate::method_names::create);
         method.append(errorMessage, LoggingEntry::Level::Error, additionalData);
         auto resp = bus.call(method);
     }
@@ -125,8 +123,9 @@ void moveToHostQuiesce(sdbusplus::bus_t& bus)
 {
     try
     {
-        auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
-                                          SYSTEMD_INTERFACE, "StartUnit");
+        auto method =
+            bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                SYSTEMD_MANAGER_INTERFACE, "StartUnit");
 
         method.append(HOST_STATE_QUIESCE_TGT);
         method.append("replace");

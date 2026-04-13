@@ -2,28 +2,52 @@
 
 set -euo pipefail
 
-OPTS="bmcstate,bootprogress,chassiskill,chassisoff,chassison,chassisstate,hoststate,\
+# ============================================================================
+# Constants - D-Bus Interfaces and Objects
+# ============================================================================
+readonly INTERFACE_ROOT="xyz.openbmc_project"
+readonly STATE_INTERFACE="${INTERFACE_ROOT}.State"
+readonly CONTROL_INTERFACE="${INTERFACE_ROOT}.Control"
+
+readonly OBJECT_ROOT="/xyz/openbmc_project"
+readonly STATE_OBJECT="${OBJECT_ROOT}/state"
+readonly CONTROL_OBJECT="${OBJECT_ROOT}/control"
+
+# ============================================================================
+# Constants - Systemd Targets and Directories
+# ============================================================================
+readonly BMC_SYSTEMD_RUN_DIR="/run/systemd/system/"
+readonly HOST_TIMEOUT_TARGET="obmc-host-timeout@0.target"
+readonly HOST_CRASH_TARGET="obmc-host-crash@0.target"
+
+# ============================================================================
+# Constants - BMC Reboot Guard
+# ============================================================================
+readonly BMC_REBOOT_GUARD_FILE="reboot-guard.conf"
+readonly BMC_REBOOT_GUARD_UNITS=("reboot" "poweroff" "halt")
+
+# ============================================================================
+# Constants - Default Values
+# ============================================================================
+readonly DEFAULT_WAIT_TIMEOUT=30
+
+# ============================================================================
+# Usage and Help
+# ============================================================================
+readonly OPTS="bmcstate,bootprogress,chassiskill,chassisoff,chassison,chassisstate,hoststate,\
 osstate,power,poweroff,poweron,state,status,hostrebootoff,hostrebooton,recoveryoff,recoveryon,\
 bmcrebootoff, bmcrebooton, listbootblock listlogs showlog deletelogs, stopofftargets"
 
-USAGE="Usage: obmcutil [-h] [--wait] [--verbose] [--id=<INSTANCE_ID>]
+readonly USAGE="Usage: obmcutil [-h] [--wait] [--verbose] [--id=<INSTANCE_ID>]
 {$OPTS}"
-
-INTERFACE_ROOT=xyz.openbmc_project
-STATE_INTERFACE=$INTERFACE_ROOT.State
-CONTROL_INTERFACE=$INTERFACE_ROOT.Control
-
-OBJECT_ROOT=/xyz/openbmc_project
-STATE_OBJECT=$OBJECT_ROOT/state
-CONTROL_OBJECT=$OBJECT_ROOT/control
-
-HOST_TIMEOUT_TARGET=obmc-host-timeout@0.target
-HOST_CRASH_TARGET=obmc-host-crash@0.target
 
 ## NOTE: By declaring these globally instead of passing them through the
 ## intermediary functions, which may not be "best practice", the readability
 ## and cleanliness of the code should at least be increased.
 
+# ============================================================================
+# Global Variables
+# ============================================================================
 # The command passed in to be executed (e.g. poweron/off, status, etc.)
 # This will be be used in some instances of error reporting
 G_ORIG_CMD=
@@ -41,6 +65,33 @@ G_VERBOSE=
 G_INSTANCE_ID="0"
 # Force a command even if system state is not correct
 G_FORCE=
+
+# ============================================================================
+# Service Cache - Avoid repeated mapper lookups
+# ============================================================================
+declare -A G_SERVICE_CACHE
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+# Get service for an object with caching to avoid repeated mapper calls
+function get_service()
+{
+    local object="$1"
+
+    # Check cache first
+    if [ -n "${G_SERVICE_CACHE[$object]:-}" ]; then
+        echo "${G_SERVICE_CACHE[$object]}"
+        return 0
+    fi
+
+    # Call mapper and cache result
+    local service
+    service=$(mapper get-service "$object")
+    G_SERVICE_CACHE[$object]="$service"
+    echo "$service"
+}
 
 function print_help()
 {
@@ -156,11 +207,55 @@ function get_property()
     run_cmd busctl get-property "$@"
 }
 
+# Generic function to query and display state properties
 function state_query()
 {
     local state
     state=$(get_property "$@" | cut -d '"' -f2)
     printf "%-20s: %s\n" "$4" "$state"
+}
+
+# Helper to query state for a given object type
+function query_state()
+{
+    local object_type="$1"
+    local interface="$2"
+    local property="$3"
+    local instance="${4:-$G_INSTANCE_ID}"
+
+    local object="${STATE_OBJECT}/${object_type}${instance}"
+    local service
+    service=$(get_service "$object")
+    state_query "$service" "$object" "$interface" "$property"
+}
+
+# Helper to set a state transition property
+function set_state_transition()
+{
+    local object_type="$1"
+    local interface="$2"
+    local property="$3"
+    local value="$4"
+    local instance="${5:-$G_INSTANCE_ID}"
+
+    local object="${STATE_OBJECT}/${object_type}${instance}"
+    local service
+    service=$(get_service "$object")
+    set_property "$service" "$object" "$interface" "$property" "s" "$value"
+}
+
+# Helper to set a control property
+function set_control_property()
+{
+    local object_path="$1"
+    local interface="$2"
+    local property="$3"
+    local type="$4"
+    local value="$5"
+
+    local service
+    service=$(get_service "$object_path")
+    set_property "$service" "$object_path" "$interface" "$property" "$type" "$value"
 }
 
 function print_usage_err()
@@ -172,56 +267,52 @@ function print_usage_err()
 
 function mask_systemd_target()
 {
-    target="$*"
-    systemctl mask "$target"
+    local target="$*"
+    systemctl mask "$target" || {
+        echo "ERROR: Failed to mask systemd target: $target" >&2
+        return 1
+    }
 }
 
 function unmask_systemd_target()
 {
-    target="$*"
-    systemctl unmask "$target"
+    local target="$*"
+    systemctl unmask "$target" || {
+        echo "ERROR: Failed to unmask systemd target: $target" >&2
+        return 1
+    }
 }
 
 function get_systemd_target_state()
 {
-    target="$*"
-    enabled_state=$(systemctl is-enabled "$target")
+    local target="$*"
+    local enabled_state
+    enabled_state=$(systemctl is-enabled "$target" 2>/dev/null) || enabled_state="unknown"
     echo "$enabled_state"
 }
 
 function disable_bmc_reboot()
 {
-    dir="/run/systemd/system/"
-    file="reboot-guard.conf"
-    units=("reboot" "poweroff" "halt")
-
-    for unit in "${units[@]}"; do
-        mkdir -p "${dir}${unit}.target.d"
-        echo -e "[Unit]\nRefuseManualStart=yes" >> "${dir}${unit}.target.d/${file}"
+    local unit
+    for unit in "${BMC_REBOOT_GUARD_UNITS[@]}"; do
+        mkdir -p "${BMC_SYSTEMD_RUN_DIR}${unit}.target.d"
+        echo -e "[Unit]\nRefuseManualStart=yes" >> "${BMC_SYSTEMD_RUN_DIR}${unit}.target.d/${BMC_REBOOT_GUARD_FILE}"
     done
 }
 
 function enable_bmc_reboot()
 {
-    dir="/run/systemd/system/"
-    file="reboot-guard.conf"
-    units=("reboot" "poweroff" "halt")
-
-    for unit in "${units[@]}"; do
-        rm -rf "${dir}${unit}.target.d/${file}"
-        rm -rf "${dir}${unit}.target.d"
+    local unit
+    for unit in "${BMC_REBOOT_GUARD_UNITS[@]}"; do
+        rm -rf "${BMC_SYSTEMD_RUN_DIR}${unit}.target.d"
     done
 }
 
 function get_bmc_reboot_status()
 {
-    dir="/run/systemd/system/"
-    file="reboot-guard.conf"
-    units=("reboot" "poweroff" "halt")
-
-    # if file do
-    for unit in "${units[@]}"; do
-        if [ -e "${dir}${unit}.target.d/${file}" ]; then
+    local unit
+    for unit in "${BMC_REBOOT_GUARD_UNITS[@]}"; do
+        if [ -e "${BMC_SYSTEMD_RUN_DIR}${unit}.target.d/${BMC_REBOOT_GUARD_FILE}" ]; then
             echo "off"
             return 0
         fi
@@ -232,10 +323,12 @@ function get_bmc_reboot_status()
 
 function get_host_reboot_status()
 {
-    OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot
-    SERVICE=$(mapper get-service "$OBJECT")
-    INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
-    PROPERTY=AutoReboot
+    local OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot
+    local SERVICE
+    SERVICE=$(get_service "$OBJECT")
+    local INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
+    local PROPERTY=AutoReboot
+    local output
     output="$(get_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY)"
     echo "${output//b /}"
 }
@@ -243,8 +336,8 @@ function get_host_reboot_status()
 # will write blocking errors to stdout
 function check_boot_block_errors()
 {
-    # array of boot block objects
-    blockArray=()
+    local blockArray=()
+    local subtree assocs entry berror
 
     # Look for any objects under logging that implement the
     # xyz.openbmc_project.Logging.ErrorBlocksTransition
@@ -254,12 +347,10 @@ function check_boot_block_errors()
                GetSubTree sias "/xyz/openbmc_project/logging/" 0 1 \
                xyz.openbmc_project.Logging.ErrorBlocksTransition)"
 
-    # remove quotation marks
-    # shellcheck disable=SC2001
-    subtree="$(echo "$subtree" | sed 's/\"//g')"
+    subtree="${subtree//\"/}"
 
     for entry in $subtree; do
-        if [[ ${entry} =~ "xyz/openbmc_project/logging/block"* ]]; then
+        if [[ ${entry} == xyz/openbmc_project/logging/block* ]]; then
             blockArray+=( "$entry" )
         fi
     done
@@ -270,12 +361,10 @@ function check_boot_block_errors()
                   org.freedesktop.DBus.Properties Get \
                   ss xyz.openbmc_project.Association.Definitions Associations)"
 
-        # remove quotation marks
-        # shellcheck disable=SC2001
-        assocs="$(echo "$assocs" | sed 's/\"//g')"
+        assocs="${assocs//\"/}"
 
         for entry in $assocs; do
-            if [[ ${entry} =~ "xyz/openbmc_project/logging/entry"* ]]; then
+            if [[ ${entry} == xyz/openbmc_project/logging/entry* ]]; then
                 echo "Blocking Error: $entry"
             fi
         done
@@ -291,10 +380,12 @@ function check_chassis_host_states()
         return 0
     fi
 
-    OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
-    SERVICE=$(mapper get-service "$OBJECT")
-    INTERFACE=$STATE_INTERFACE.Chassis
-    PROPERTY=CurrentPowerState
+    local OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
+    local SERVICE
+    SERVICE=$(get_service "$OBJECT")
+    local INTERFACE=$STATE_INTERFACE.Chassis
+    local PROPERTY=CurrentPowerState
+    local state
     state=$(get_property "$SERVICE" "$OBJECT" "$INTERFACE $PROPERTY" | cut -d '"' -f2)
     if [[ ${state} =~ "xyz.openbmc_project.State.Chassis.PowerState.Transitioning"* ]]; then
         echo "Chassis is $state, request rejected, use --force to override"
@@ -302,7 +393,7 @@ function check_chassis_host_states()
     fi
 
     OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
-    SERVICE=$(mapper get-service "$OBJECT")
+    SERVICE=$(get_service "$OBJECT")
     INTERFACE=$STATE_INTERFACE.Host
     PROPERTY=CurrentHostState
     state=$(get_property "$SERVICE" "$OBJECT" "$INTERFACE $PROPERTY" | cut -d '"' -f2)
@@ -371,77 +462,45 @@ function handle_cmd()
     case "$1" in
         chassisoff)
             check_chassis_host_states
-            OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Chassis
-            PROPERTY=RequestedPowerTransition
-            VALUE=$INTERFACE.Transition.Off
+            local INTERFACE=$STATE_INTERFACE.Chassis
             G_REQUESTED_STATE=$INTERFACE.PowerState.Off
             G_QUERY="chassisstate"
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "s" $VALUE
+            set_state_transition "chassis" "$INTERFACE" "RequestedPowerTransition" "$INTERFACE.Transition.Off"
             ;;
         chassison)
             check_chassis_host_states
             check_and_warn_boot_block
-            OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Chassis
-            PROPERTY=RequestedPowerTransition
-            VALUE=$INTERFACE.Transition.On
+            local INTERFACE=$STATE_INTERFACE.Chassis
             G_REQUESTED_STATE=$INTERFACE.PowerState.On
             G_QUERY="chassisstate"
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "s" $VALUE
+            set_state_transition "chassis" "$INTERFACE" "RequestedPowerTransition" "$INTERFACE.Transition.On"
             ;;
         poweroff)
             check_chassis_host_states
-            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Host
-            PROPERTY=RequestedHostTransition
-            VALUE=$INTERFACE.Transition.Off
+            local INTERFACE=$STATE_INTERFACE.Host
             G_REQUESTED_STATE=$INTERFACE.HostState.Off
             G_QUERY="hoststate"
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "s" $VALUE
+            set_state_transition "host" "$INTERFACE" "RequestedHostTransition" "$INTERFACE.Transition.Off"
             ;;
         poweron)
             check_chassis_host_states
             check_and_warn_boot_block
-            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Host
-            PROPERTY=RequestedHostTransition
-            VALUE=$INTERFACE.Transition.On
+            local INTERFACE=$STATE_INTERFACE.Host
             G_REQUESTED_STATE=$INTERFACE.HostState.Running
             G_QUERY="hoststate"
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "s" $VALUE
+            set_state_transition "host" "$INTERFACE" "RequestedHostTransition" "$INTERFACE.Transition.On"
             ;;
         bmcstate)
-            OBJECT=$STATE_OBJECT/bmc0
-            SERVICE=$(mapper get-service $OBJECT)
-            INTERFACE=$STATE_INTERFACE.BMC
-            PROPERTY=CurrentBMCState
-            state_query "$SERVICE" $OBJECT $INTERFACE $PROPERTY
+            query_state "bmc" "$STATE_INTERFACE.BMC" "CurrentBMCState" "0"
             ;;
         chassisstate)
-            OBJECT=$STATE_OBJECT/chassis$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Chassis
-            PROPERTY=CurrentPowerState
-            state_query "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY
+            query_state "chassis" "$STATE_INTERFACE.Chassis" "CurrentPowerState"
             ;;
         hoststate)
-            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Host
-            PROPERTY=CurrentHostState
-            state_query "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY
+            query_state "host" "$STATE_INTERFACE.Host" "CurrentHostState"
             ;;
         osstate)
-            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.OperatingSystem.Status
-            PROPERTY=OperatingSystemState
-            state_query "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY
+            query_state "host" "$STATE_INTERFACE.OperatingSystem.Status" "OperatingSystemState"
             ;;
         state|status)
             for query in bmcstate chassisstate hoststate bootprogress osstate
@@ -451,51 +510,39 @@ function handle_cmd()
             check_and_warn_boot_block
             ;;
         bootprogress)
-            OBJECT=$STATE_OBJECT/host$G_INSTANCE_ID
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$STATE_INTERFACE.Boot.Progress
-            PROPERTY=BootProgress
-            state_query "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY
+            query_state "host" "$STATE_INTERFACE.Boot.Progress" "BootProgress"
             ;;
         power)
-            OBJECT=/org/openbmc/control/power0
-            SERVICE=$(mapper get-service $OBJECT)
-            INTERFACE=org.openbmc.control.Power
+            local OBJECT=/org/openbmc/control/power0
+            local SERVICE
+            SERVICE=$(get_service "$OBJECT")
+            local INTERFACE=org.openbmc.control.Power
+            local property STATE
             for property in pgood state pgood_timeout; do
                 # get_property can potentially return several
                 # different formats of values, so we do the parsing outside
                 # of get_property depending on the query. These queries
                 # return 'i VALUE' formatted strings.
-                STATE=$(get_property "$SERVICE" "$OBJECT" "$INTERFACE" "$property" | sed 's/i[ ^I]*//')
-                printf "%s = %s\n" $property "$STATE"
+                STATE=$(get_property "$SERVICE" "$OBJECT" "$INTERFACE" "$property")
+                STATE="${STATE#i }"
+                STATE="${STATE#i	}"
+                printf "%s = %s\n" "$property" "$STATE"
             done
             ;;
         chassiskill)
             /usr/libexec/chassiskill
             ;;
         hostrebootoff)
-            OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
-            PROPERTY=AutoReboot
-            VALUE=false
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "b" $VALUE
+            set_control_property "$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot" \
+                "$CONTROL_INTERFACE.Boot.RebootPolicy" "AutoReboot" "b" "false"
             ;;
         hostrebootoffonetime)
-            OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot/one_time
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
-            PROPERTY=AutoReboot
-            VALUE=false
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "b" $VALUE
+            set_control_property "$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot/one_time" \
+                "$CONTROL_INTERFACE.Boot.RebootPolicy" "AutoReboot" "b" "false"
             ;;
         hostrebooton)
-            OBJECT=$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot
-            SERVICE=$(mapper get-service "$OBJECT")
-            INTERFACE=$CONTROL_INTERFACE.Boot.RebootPolicy
-            PROPERTY=AutoReboot
-            VALUE=true
-            set_property "$SERVICE" "$OBJECT" $INTERFACE $PROPERTY "b" $VALUE
+            set_control_property "$CONTROL_OBJECT/host$G_INSTANCE_ID/auto_reboot" \
+                "$CONTROL_INTERFACE.Boot.RebootPolicy" "AutoReboot" "b" "true"
             ;;
         bmcrebootoff)
             disable_bmc_reboot
@@ -573,6 +620,9 @@ function handle_cmd()
             list_logs
             ;;
         showlog)
+            if [ -z "${2:-}" ]; then
+                print_usage_err "showlog requires a log path argument"
+            fi
             show_log "$2"
             ;;
         deletelogs)
@@ -587,11 +637,16 @@ function handle_cmd()
     esac
 }
 
+# Validate at least one argument is provided
+if [ $# -eq 0 ]; then
+    print_usage_err "No command specified"
+fi
+
 shiftcnt=0
 for arg in "$@"; do
     case $arg in
         -w|--wait)
-            G_WAIT=30
+            G_WAIT=$DEFAULT_WAIT_TIMEOUT
             shiftcnt=$((shiftcnt+1))
             continue
             ;;
@@ -604,6 +659,10 @@ for arg in "$@"; do
             ;;
         -i=*|--id=*)
             G_INSTANCE_ID="${arg#*=}"
+            # Validate instance ID is a number
+            if ! [[ "$G_INSTANCE_ID" =~ ^[0-9]+$ ]]; then
+                print_usage_err "Instance ID must be a number: $G_INSTANCE_ID"
+            fi
             shiftcnt=$((shiftcnt+1))
             ;;
         -f|--force)
@@ -624,3 +683,8 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# If we got here without executing a command, only options were provided
+if [ -z "$G_ORIG_CMD" ]; then
+    print_usage_err "No command specified"
+fi

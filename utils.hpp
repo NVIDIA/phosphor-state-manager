@@ -5,6 +5,13 @@
 #include <sdbusplus/bus.hpp>
 #include <xyz/openbmc_project/Logging/Entry/server.hpp>
 
+constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
+
+constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
+constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
+constexpr auto SYSTEMD_MANAGER_INTERFACE = "org.freedesktop.systemd1.Manager";
+constexpr auto SYSTEMD_UNIT_INTERFACE = "org.freedesktop.systemd1.Unit";
+
 namespace phosphor
 {
 namespace state
@@ -117,13 +124,11 @@ bool isBmcReady(sdbusplus::bus_t& bus);
  */
 bool waitBmcReady(sdbusplus::bus_t& bus, std::chrono::seconds timeout);
 
-#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 /** @brief Determine if any firmware being updated
  *
  * @param[in] bus          - The Dbus bus object
  */
 bool isFirmwareUpdating(sdbusplus::bus_t& bus);
-#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
 } // namespace utils
 } // namespace manager
