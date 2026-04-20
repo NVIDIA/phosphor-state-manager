@@ -196,7 +196,7 @@ bool isHostRunning(size_t id)
             "Introspecting new bus objects for bus id: {ID} sleeping for 1 second.",
             "ID", id);
         // Give mapper a small window to introspect new objects on bus
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        std::this_thread::sleep_for(MAPPER_RETRY_DELAY);
         try
         {
             if (checkFirmwareConditionRunning(bus))

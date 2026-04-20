@@ -104,9 +104,6 @@ class Host : public HostInherit
     /** @brief Set value of CurrentHostState */
     HostState currentHostState(HostState value) override;
 
-    /** @brief Set Value for boot progress last update time */
-    uint64_t bootProgressLastUpdate(uint64_t value) override;
-
     /** @brief Set Value for RestartCause */
     RestartCause restartCause(RestartCause value) override;
 

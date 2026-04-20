@@ -30,7 +30,6 @@ PHOSPHOR_LOG2_USING;
 
 constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
 constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
-constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 // Get the property value

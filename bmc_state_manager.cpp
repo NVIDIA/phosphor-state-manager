@@ -12,7 +12,6 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
 #include <xyz/openbmc_project/State/BMC/common.hpp>
-#include <xyz/openbmc_project/State/BMC/event.hpp>
 
 #include <cerrno>
 #include <cstdlib>
@@ -256,18 +255,17 @@ BMC::Transition BMC::requestedBMCTransition(Transition value)
          "{REQUESTED_BMC_TRANSITION}",
          "REQUESTED_BMC_TRANSITION", value);
 
-    if constexpr (CHECK_FWUPDATE_BEFORE_DO_TRANSITION)
+#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
+    /*
+     * Do not do transition when the any firmware being updated
+     */
+    if ((server::BMC::Transition::Reboot == value) &&
+        (phosphor::state::manager::utils::isFirmwareUpdating(this->bus)))
     {
-        /*
-         * Do not do transition when the any firmware being updated
-         */
-        if ((server::BMC::Transition::Reboot == value) &&
-            (phosphor::state::manager::utils::isFirmwareUpdating(this->bus)))
-        {
-            info("Firmware being updated, reject the transition request");
-            throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
-        }
+        info("Firmware being updated, reject the transition request");
+        throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
     }
+#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
     if (executeTransition(value))
     {
@@ -284,13 +282,6 @@ BMC::BMCState BMC::currentBMCState(BMCState value)
 {
     info("Setting the BMCState field to {CURRENT_BMC_STATE}",
          "CURRENT_BMC_STATE", value);
-
-    if (server::BMC::currentBMCState() != value)
-    {
-        using StateChanged =
-            sdbusplus::event::xyz::openbmc_project::state::BMC::StateChanged;
-        lg2::commit(StateChanged("STATE", value));
-    }
 
     return server::BMC::currentBMCState(value);
 }

@@ -468,18 +468,16 @@ Host::Transition Host::requestedHostTransition(Transition value)
     // check of this count will occur
     if (value != server::Host::Transition::Off)
     {
-        if constexpr (CHECK_FWUPDATE_BEFORE_DO_TRANSITION)
+#ifdef CHECK_FWUPDATE_BEFORE_DO_TRANSITION
+        /*
+         * Do not do transition when the any firmware being updated
+         */
+        if (phosphor::state::manager::utils::isFirmwareUpdating(this->bus))
         {
-            /*
-             * Do not do transition when the any firmware being updated
-             */
-            if (phosphor::state::manager::utils::isFirmwareUpdating(this->bus))
-            {
-                info("Firmware being updated, reject the transition request");
-                throw sdbusplus::xyz::openbmc_project::Common::Error::
-                    Unavailable();
-            }
+            info("Firmware being updated, reject the transition request");
+            throw sdbusplus::xyz::openbmc_project::Common::Error::Unavailable();
         }
+#endif // CHECK_FWUPDATE_BEFORE_DO_TRANSITION
 
         decrementRebootCount();
     }
@@ -557,13 +555,6 @@ Host::HostState Host::currentHostState(HostState value)
     info("Change to Host{HOST_ID} State: {STATE}", "HOST_ID", id, "STATE",
          value);
     return server::Host::currentHostState(value);
-}
-
-uint64_t Host::bootProgressLastUpdate(uint64_t value)
-{
-    auto retVal = bootprogress::Progress::bootProgressLastUpdate(value);
-    serialize();
-    return retVal;
 }
 
 Host::RestartCause Host::restartCause(RestartCause value)
