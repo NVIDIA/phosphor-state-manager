@@ -49,7 +49,6 @@ PropertyValue getPropertyV2(
     return value;
 }
 
-
 using ObjectMapper = sdbusplus::client::xyz::openbmc_project::ObjectMapper<>;
 using ActBlockTrans = sdbusplus::client::xyz::openbmc_project::software::
     ActivationBlocksTransition<>;

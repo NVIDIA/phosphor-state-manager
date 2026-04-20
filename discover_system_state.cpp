@@ -41,7 +41,6 @@ using BMCState = sdbusplus::client::xyz::openbmc_project::state::BMC<>;
 } // namespace state
 } // namespace phosphor
 
-
 int main(int argc, char** argv)
 {
     using namespace phosphor::logging;
