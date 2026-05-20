@@ -82,6 +82,14 @@ class Chassis : public ChassisInherit
     /** @brief Set value of CurrentPowerState */
     PowerState currentPowerState(PowerState value) override;
 
+    /** @brief Set value of LastStateChangeTime and persist it.
+     *
+     *  Override ensures that external D-Bus set-property calls (e.g. from
+     *  update_last_state_change_time.sh) are serialized to the persist
+     *  file, so the value survives BMC reboots.
+     */
+    uint64_t lastStateChangeTime(uint64_t value) override;
+
     /** @brief Get value of POHCounter */
     using ChassisInherit::pohCounter;
 

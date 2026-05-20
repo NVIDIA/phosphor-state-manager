@@ -622,6 +622,13 @@ Chassis::PowerState Chassis::currentPowerState(PowerState value)
     return chassisPowerState;
 }
 
+uint64_t Chassis::lastStateChangeTime(uint64_t value)
+{
+    auto time = ChassisInherit::lastStateChangeTime(value);
+    serializeStateChangeTime();
+    return time;
+}
+
 uint32_t Chassis::pohCounter(uint32_t value)
 {
     if (value != pohCounter())
