@@ -4,6 +4,7 @@
 
 #include <getopt.h>
 
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 
 #include <cstdlib>
@@ -20,6 +21,7 @@ constexpr auto LEGACY_STATE_CHANGE_PERSIST_PATH =
 using ChassisState = sdbusplus::server::xyz::openbmc_project::state::Chassis;
 
 int main(int argc, char** argv)
+try
 {
     size_t chassisId = 0;
     int arg;
@@ -87,4 +89,15 @@ int main(int argc, char** argv)
     bus.request_name(chassisBusName.c_str());
     manager.startPOHCounter();
     return 0;
+}
+catch (const std::exception& e)
+{
+    lg2::error("chassis-state-manager terminated by exception: {ERR}", "ERR",
+               e.what());
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    lg2::error("chassis-state-manager terminated by unknown exception");
+    return EXIT_FAILURE;
 }

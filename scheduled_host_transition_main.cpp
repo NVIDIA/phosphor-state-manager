@@ -4,6 +4,7 @@
 
 #include <getopt.h>
 
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 
 #include <cstdlib>
@@ -14,6 +15,7 @@ using ScheduledHostTransition =
     sdbusplus::server::xyz::openbmc_project::state::ScheduledHostTransition;
 
 int main(int argc, char** argv)
+try
 {
     size_t hostId = 0;
 
@@ -75,4 +77,15 @@ int main(int argc, char** argv)
     event.loop();
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    lg2::error("scheduled-host-transition terminated by exception: {ERR}",
+               "ERR", e.what());
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    lg2::error("scheduled-host-transition terminated by unknown exception");
+    return EXIT_FAILURE;
 }
