@@ -124,27 +124,25 @@ class StateMachineHandler
     {}
     virtual ~StateMachineHandler() = default;
 
-    std::vector<std::unique_ptr<sdbusplus::bus::match::match>>
-        eventHandlerMatcher;
+    std::vector<std::unique_ptr<sdbusplus::bus::match_t>> eventHandlerMatcher;
 
-    void init(sdbusplus::bus::bus& bus);
+    void init(sdbusplus::bus_t& bus);
     void executeTransition();
     void collectMatchPairs(
         const Condition& condition,
         std::unordered_map<std::string, std::unordered_set<std::string>>&
             intfObjPairs);
     static phosphor::state::manager::utils::PropertyValue handleTimeoutRetries(
-        sdbusplus::bus::bus& bus, const std::string& service,
+        sdbusplus::bus_t& bus, const std::string& service,
         const std::string& objectPath, const std::string& interface,
         const std::string& property);
-    bool evaluateCondition(sdbusplus::bus::bus& bus,
-                           const Condition& condition);
+    bool evaluateCondition(sdbusplus::bus_t& bus, const Condition& condition);
     static bool any(const std::vector<bool>& bool_vector);
     static bool all(const std::vector<bool>& bool_vector);
     virtual void setPropertyValue(const std::string& propertyName,
                                   const std::string& val) = 0;
     virtual std::string getCurrState() = 0;
-    virtual void doActions(sdbusplus::bus::bus& bus,
+    virtual void doActions(sdbusplus::bus_t& bus,
                            const std::vector<std::string>& actions);
 };
 
@@ -177,7 +175,7 @@ class CategoryFeatureReady : public FeatureIntfInherit, StateMachineHandler
     }
 
     CategoryFeatureReady(
-        sdbusplus::bus::bus& bus, const char* objPath,
+        sdbusplus::bus_t& bus, const char* objPath,
         const std::string& interfaceName, const std::string& featureType,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :
@@ -240,7 +238,7 @@ class CategoryServiceReady : public ServiceIntfInherit, StateMachineHandler
     }
 
     CategoryServiceReady(
-        sdbusplus::bus::bus& bus, const char* objPath,
+        sdbusplus::bus_t& bus, const char* objPath,
         const std::string& interfaceName, const std::string& featureType,
         const std::string& stateProperty, const std::string& defaultState,
         const std::string& errorState, const std::vector<State>& states) :

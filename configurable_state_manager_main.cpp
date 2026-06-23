@@ -54,7 +54,7 @@ constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
 
 phosphor::state::manager::utils::PropertyValue
     StateMachineHandler::handleTimeoutRetries(
-        sdbusplus::bus::bus& bus, const std::string& service,
+        sdbusplus::bus_t& bus, const std::string& service,
         const std::string& objectPath, const std::string& interface,
         const std::string& property)
 {
@@ -145,7 +145,7 @@ bool StateMachineHandler::all(const std::vector<bool>& bool_vector)
     return true;
 }
 
-void StateMachineHandler::init(sdbusplus::bus::bus& bus)
+void StateMachineHandler::init(sdbusplus::bus_t& bus)
 {
     // Collect object-interface pairs for all states
     std::unordered_map<std::string, std::unordered_set<std::string>>
@@ -160,7 +160,7 @@ void StateMachineHandler::init(sdbusplus::bus::bus& bus)
         for (const auto& objPath : objects)
         {
             auto matchPtr = std::make_unique<
-                sdbusplus::bus::match::match>(sdbusplus::bus::match::match(
+                sdbusplus::bus::match_t>(sdbusplus::bus::match_t(
                 bus,
                 sdbusplus::bus::match::rules::propertiesChanged(
                     std::string(objPath), ifaceName),
@@ -187,7 +187,7 @@ void StateMachineHandler::init(sdbusplus::bus::bus& bus)
 
             // create interface added matchPtr
             auto matchPtr2 = std::make_unique<
-                sdbusplus::bus::match::match>(sdbusplus::bus::match::match(
+                sdbusplus::bus::match_t>(sdbusplus::bus::match_t(
                 bus,
                 sdbusplus::bus::match::rules::interfacesAdded() +
                     sdbusplus::bus::match::rules::argNpath(
@@ -196,7 +196,7 @@ void StateMachineHandler::init(sdbusplus::bus::bus& bus)
                     std::map<std::string,
                              std::map<std::string, std::variant<std::string>>>
                         interfacesMap;
-                    sdbusplus::message::object_path path;
+                    sdbusplus::object_path path;
                     msg.read(path, interfacesMap);
 
                     for (auto& interface : interfacesMap)
@@ -249,7 +249,7 @@ void StateMachineHandler::collectMatchPairs(
     }
 }
 
-bool StateMachineHandler::evaluateCondition(sdbusplus::bus::bus& bus,
+bool StateMachineHandler::evaluateCondition(sdbusplus::bus_t& bus,
                                             const Condition& condition)
 {
     // For simple condition type, check property value against target value
@@ -401,7 +401,7 @@ void StateMachineHandler::executeTransition()
     }
 }
 
-void StateMachineHandler::doActions(sdbusplus::bus::bus& bus,
+void StateMachineHandler::doActions(sdbusplus::bus_t& bus,
                                     const std::vector<std::string>& actions)
 {
     for (const auto& action : actions)

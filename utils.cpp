@@ -33,10 +33,10 @@ constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
 constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
 
 // Get the property value
-PropertyValue getPropertyV2(
-    sdbusplus::bus::bus& bus, const std::string& service,
-    const std::string& objectPath, const std::string& interface,
-    const std::string& propertyName)
+PropertyValue getPropertyV2(sdbusplus::bus_t& bus, const std::string& service,
+                            const std::string& objectPath,
+                            const std::string& interface,
+                            const std::string& propertyName)
 {
     PropertyValue value{};
 
@@ -221,9 +221,8 @@ void createBmcDump(sdbusplus::bus_t& bus [[maybe_unused]])
 {
 #ifdef ENABLE_BMC_DUMP
     using DumpCreate = sdbusplus::client::xyz::openbmc_project::dump::Create<>;
-    auto dumpPath =
-        sdbusplus::message::object_path(DumpCreate::namespace_path::value) /
-        DumpCreate::namespace_path::bmc;
+    auto dumpPath = sdbusplus::object_path(DumpCreate::namespace_path::value) /
+                    DumpCreate::namespace_path::bmc;
 
     auto method = bus.new_method_call(
         DumpCreate::default_service, dumpPath.str.c_str(),
@@ -256,7 +255,7 @@ bool checkACLoss(size_t& chassisId)
 bool isBmcReady(sdbusplus::bus_t& bus)
 {
     using BMC = sdbusplus::client::xyz::openbmc_project::state::BMC<>;
-    auto bmcPath = sdbusplus::message::object_path(BMC::namespace_path::value) /
+    auto bmcPath = sdbusplus::object_path(BMC::namespace_path::value) /
                    BMC::namespace_path::bmc;
 
     auto bmcState = getProperty(bus, bmcPath.str, BMC::interface,
