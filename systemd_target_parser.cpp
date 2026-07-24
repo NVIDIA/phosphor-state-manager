@@ -1,8 +1,11 @@
 #include "systemd_target_parser.hpp"
 
+#include <phosphor-logging/lg2.hpp>
+
 #include <cassert>
 #include <fstream>
-#include <iostream>
+
+PHOSPHOR_LOG2_USING;
 
 void validateErrorsToMonitor(std::vector<std::string>& errorsToMonitor)
 {
@@ -44,9 +47,15 @@ TargetErrorData parseFiles(const std::vector<std::string>& filePaths)
     {
         if (gVerbose)
         {
-            std::cout << "Parsing input file " << jsonFile << std::endl;
+            debug("Parsing input file {FILE}", "FILE", jsonFile);
         }
         std::ifstream fileStream(jsonFile);
+        if (!fileStream.is_open())
+        {
+            error("Failed to open target monitor file: {FILE}", "FILE",
+                  jsonFile);
+            continue;
+        }
         auto j = json::parse(fileStream);
 
         for (auto it = j["targets"].begin(); it != j["targets"].end(); ++it)
@@ -54,8 +63,8 @@ TargetErrorData parseFiles(const std::vector<std::string>& filePaths)
             targetEntry entry;
             if (gVerbose)
             {
-                std::cout << "target: " << it.key() << " | " << it.value()
-                          << std::endl;
+                debug("target: {KEY} | {VALUE}", "KEY", it.key(), "VALUE",
+                      it.value());
             }
 
             // Be unforgiving on invalid json files. Just throw or allow

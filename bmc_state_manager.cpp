@@ -3,7 +3,6 @@
 #include "bmc_state_manager.hpp"
 
 #include "utils.hpp"
-#include "xyz/openbmc_project/Common/error.hpp"
 
 #include <gpiod.h>
 
@@ -12,6 +11,7 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
 #include <xyz/openbmc_project/State/BMC/common.hpp>
+#include <xyz/openbmc_project/State/BMC/event.hpp>
 
 #include <cerrno>
 #include <cstdlib>
@@ -19,20 +19,16 @@
 #include <fstream>
 #include <iostream>
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 PHOSPHOR_LOG2_USING;
 
 // When you see server:: you know we're referencing our base class
 namespace server = sdbusplus::server::xyz::openbmc_project::state;
+namespace event = sdbusplus::event::xyz::openbmc_project::state;
 
 using namespace phosphor::logging;
-using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
 
 constexpr auto obmcQuiesceTarget = "obmc-bmc-service-quiesce@0.target";
 constexpr auto obmcStandbyTarget = OBMC_STANDBY_TARGET;
@@ -168,7 +164,11 @@ bool BMC::executeTransition(const Transition tranReq)
     {
         // Put BMC state not NotReady when issuing a BMC reboot
         // and stop monitoring for state changes
-        this->currentBMCState(BMCState::NotReady);
+        // This signals external Redfish clients to cease communication.
+        // To avoid generating event logs which are intended for the
+        // BMC startup process, call the sdbusplus class directly.
+        info("Setting the BMCState field to BMC_NOTREADY");
+        server::BMC::currentBMCState(BMCState::NotReady);
         this->stateSignal.reset();
 
         auto method =
@@ -205,7 +205,11 @@ bool BMC::executeTransition(const Transition tranReq)
 
         // Put BMC state not NotReady when issuing a BMC reboot
         // and stop monitoring for state changes
-        this->currentBMCState(BMCState::NotReady);
+        // This signals external Redfish clients to cease communication.
+        // To avoid generating event logs which are intended for the
+        // BMC startup process, call the sdbusplus class directly.
+        info("Setting the BMCState field to BMC_NOTREADY");
+        server::BMC::currentBMCState(BMCState::NotReady);
         this->stateSignal.reset();
 
         try
@@ -232,7 +236,8 @@ int BMC::bmcStateChange(sdbusplus::message_t& msg)
     // Read the msg and populate each variable
     msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
 
-    if ((newStateUnit == obmcQuiesceTarget) && (newStateResult == signalDone))
+    if ((newStateUnit == obmcQuiesceTarget) && (newStateResult == signalDone) &&
+        (getUnitState(newStateUnit) == activeState))
     {
         error("BMC has entered BMC_QUIESCED state");
         bmcIsQuiesced();
@@ -240,7 +245,8 @@ int BMC::bmcStateChange(sdbusplus::message_t& msg)
     }
 
     // Caught the signal that indicates the BMC is now BMC_READY
-    if ((newStateUnit == obmcStandbyTarget) && (newStateResult == signalDone))
+    if ((newStateUnit == obmcStandbyTarget) && (newStateResult == signalDone) &&
+        (getUnitState(newStateUnit) == activeState))
     {
         info("BMC_READY");
         this->currentBMCState(BMCState::Ready);
@@ -283,6 +289,11 @@ BMC::BMCState BMC::currentBMCState(BMCState value)
     info("Setting the BMCState field to {CURRENT_BMC_STATE}",
          "CURRENT_BMC_STATE", value);
 
+    if (server::BMC::currentBMCState() != value)
+    {
+        lg2::commit(event::BMC::StateChanged("STATE", value));
+    }
+
     return server::BMC::currentBMCState(value);
 }
 
@@ -290,6 +301,12 @@ BMC::RebootCause BMC::lastRebootCause(RebootCause value)
 {
     info("Setting the RebootCause field to {LAST_REBOOT_CAUSE}",
          "LAST_REBOOT_CAUSE", value);
+
+    if (server::BMC::lastRebootCause() != value)
+    {
+        lg2::commit(event::BMC::RebootCause("CAUSE", value, "BOOT_DEVICE",
+                                            getBootDevice()));
+    }
 
     return server::BMC::lastRebootCause(value);
 }
@@ -317,6 +334,27 @@ void BMC::updateLastRebootTime()
 uint64_t BMC::lastRebootTime() const
 {
     return rebootTime;
+}
+
+std::string BMC::getBootDevice()
+{
+    std::string bootDevice;
+    std::ifstream file;
+    const std::filesystem::path bootSlotPath = "/run/boot-device";
+
+    // If the file does not exist, return "Unknown".
+    // Not all systems provide this path for boot device detection.
+    if (!std::filesystem::exists(bootSlotPath))
+    {
+        return "Unknown";
+    }
+
+    file.exceptions(std::ifstream::failbit | std::ifstream::badbit |
+                    std::ifstream::eofbit);
+    file.open(bootSlotPath);
+    std::getline(file, bootDevice);
+
+    return bootDevice;
 }
 
 void BMC::discoverLastRebootCause()
@@ -418,6 +456,4 @@ void BMC::createRFLogEntry(const std::string& messageId,
     }
 }
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

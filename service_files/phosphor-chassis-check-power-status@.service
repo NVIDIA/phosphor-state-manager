@@ -6,13 +6,14 @@ Wants=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
 After=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
 After=phosphor-reset-chassis-on@%i.service
 Conflicts=obmc-chassis-poweroff@%i.target
+After=obmc-chassis-poweroff@%i.target
 ConditionPathExists=!/run/openbmc/chassis@%i-on
 
 [Service]
 Restart=no
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/phosphor-chassis-check-power-status --chassis %i
+ExecStart=/usr/libexec/phosphor-state-manager/phosphor-chassis-check-power-status --chassis %i
 
 [Install]
 # Handled by bitbake recipe

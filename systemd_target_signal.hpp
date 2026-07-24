@@ -7,13 +7,12 @@
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/bus/match.hpp>
 
+#include <string>
+#include <vector>
+
 extern bool gVerbose;
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 /** @class SystemdTargetLogging
@@ -30,20 +29,22 @@ class SystemdTargetLogging
     SystemdTargetLogging& operator=(SystemdTargetLogging&&) = delete;
     virtual ~SystemdTargetLogging() = default;
 
-    SystemdTargetLogging(const TargetErrorData& targetData,
-                         const ServiceMonitorData& serviceData,
-                         sdbusplus::bus_t& bus) :
-        targetData(targetData), serviceData(serviceData), bus(bus),
+    SystemdTargetLogging(
+        const TargetErrorData& targetData,
+        const ServiceMonitorData& serviceData,
+        const ImmediateQuiesceData& immediateQuiesceServiceData,
+        sdbusplus::bus_t& bus) :
+        targetData(targetData), serviceData(serviceData),
+        immediateQuiesceServiceData(immediateQuiesceServiceData), bus(bus),
         systemdJobRemovedSignal(
             bus,
-            sdbusplus::bus::match::rules::type::signal() +
-                sdbusplus::bus::match::rules::member("JobRemoved") +
-                sdbusplus::bus::match::rules::path(SYSTEMD_OBJ_PATH) +
-                sdbusplus::bus::match::rules::interface(
-                    SYSTEMD_MANAGER_INTERFACE),
+            sdbusplus::match_rules::type::signal() +
+                sdbusplus::match_rules::member("JobRemoved") +
+                sdbusplus::match_rules::path(SYSTEMD_OBJ_PATH) +
+                sdbusplus::match_rules::interface(SYSTEMD_MANAGER_INTERFACE),
             [this](sdbusplus::message_t& m) { systemdUnitChange(m); }),
         systemdNameOwnedChangedSignal(
-            bus, sdbusplus::bus::match::rules::nameOwnerChanged(),
+            bus, sdbusplus::match_rules::nameOwnerChanged(),
             [this](sdbusplus::message_t& m) { processNameChangeSignal(m); })
     {}
 
@@ -101,22 +102,49 @@ class SystemdTargetLogging
      */
     void processNameChangeSignal(sdbusplus::message_t& msg);
 
+    /** @brief Set up PropertiesChanged monitors for immediate-quiesce services
+     *
+     * For each service in immediateQuiesceServiceData, resolve its systemd
+     * unit object path via LoadUnit and install a PropertiesChanged
+     * match on the org.freedesktop.systemd1.Unit interface. When
+     * ActiveState becomes "failed", a BMC dump, error log, and quiesce
+     * are triggered immediately.
+     */
+    void initImmediateQuiesceMonitoring();
+
+    /** @brief Handle a PropertiesChanged signal for a monitored unit
+     *
+     * @param[in]  msg       - Data associated with PropertiesChanged signal
+     * @param[in]  unitName  - The human-readable service name
+     */
+    void processImmediateQuiesceStateChange(sdbusplus::message_t& msg,
+                                            const std::string& unitName);
+
     /** @brief Systemd targets to monitor and error logs to create */
     const TargetErrorData& targetData;
 
-    /** @brief Systemd targets to monitor and error logs to create */
+    /** @brief Systemd services to monitor for failure via JobRemoved */
     const ServiceMonitorData& serviceData;
+
+    /** @brief Systemd services to monitor via ActiveState changes */
+    const ImmediateQuiesceData& immediateQuiesceServiceData;
 
     /** @brief Persistent sdbusplus DBus bus connection. */
     sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus systemd JobRemoved signals **/
-    sdbusplus::bus::match_t systemdJobRemovedSignal;
+    sdbusplus::match systemdJobRemovedSignal;
 
     /** @brief Used to know when systemd has registered on dbus **/
-    sdbusplus::bus::match_t systemdNameOwnedChangedSignal;
+    sdbusplus::match systemdNameOwnedChangedSignal;
+
+    /** @brief PropertiesChanged matches for immediate-quiesce monitored units
+     */
+    std::vector<sdbusplus::match> immediateQuiesceMatches;
+
+    /** @brief Track whether immediate-quiesce monitoring has been initialized
+     */
+    bool immediateQuiesceMonitoringInitialized = false;
 };
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

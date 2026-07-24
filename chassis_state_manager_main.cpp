@@ -1,9 +1,11 @@
 #include "config.h"
 
 #include "chassis_state_manager.hpp"
+#include "chassis_state_manager_smp.hpp"
 
 #include <getopt.h>
 
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 
 #include <cstdlib>
@@ -11,6 +13,8 @@
 #include <filesystem>
 #include <format>
 #include <iostream>
+
+PHOSPHOR_LOG2_USING;
 
 constexpr auto LEGACY_POH_COUNTER_PERSIST_PATH =
     "/var/lib/phosphor-state-manager/POHCounter";
@@ -47,7 +51,8 @@ int main(int argc, char** argv)
     const auto* objPath = ChassisState::namespace_path::value;
     auto chassisName = std::string(ChassisState::namespace_path::chassis) +
                        std::to_string(chassisId);
-    std::string objPathInst = sdbusplus::object_path(objPath) / chassisName;
+    sdbusplus::object_path objPathInst =
+        sdbusplus::object_path(objPath) / chassisName;
 
     if (chassisId == 0)
     {
@@ -64,27 +69,78 @@ int main(int argc, char** argv)
             std::format(CHASSIS_STATE_CHANGE_PERSIST_PATH, chassisId)};
         if (fs::exists(legacyPohPath))
         {
-            fs::rename(legacyPohPath, newPohPath);
+            try
+            {
+                fs::rename(legacyPohPath, newPohPath);
+            }
+            catch (const fs::filesystem_error& e)
+            {
+                error("Failed to rename legacy file {LEGACY} to {NEW}: {ERROR}",
+                      "LEGACY", legacyPohPath, "NEW", newPohPath, "ERROR", e);
+            }
         }
         if (fs::exists(legacyStateChangePath))
         {
-            fs::rename(legacyStateChangePath, newStateChangePath);
+            try
+            {
+                fs::rename(legacyStateChangePath, newStateChangePath);
+            }
+            catch (const fs::filesystem_error& e)
+            {
+                error("Failed to rename legacy file {LEGACY} to {NEW}: {ERROR}",
+                      "LEGACY", legacyStateChangePath, "NEW",
+                      newStateChangePath, "ERROR", e);
+            }
         }
     }
 
     // Add sdbusplus ObjectManager.
     sdbusplus::server::manager_t objManager(bus, objPath);
-    phosphor::state::manager::Chassis manager(bus, objPathInst.c_str(),
-                                              chassisId);
 
-    // For backwards compatibility, request a busname without chassis id if
-    // input id is 0.
-    if (chassisId == 0)
+    if constexpr (ENABLE_MULTI_CHASSIS_SMP)
     {
-        bus.request_name(ChassisState::interface);
+        if (chassisId == 0)
+        {
+            // Use SMP aggregator for chassis 0
+            phosphor::state::manager::ChassisSMP manager(bus, objPathInst,
+                                                         NUM_CHASSIS_SMP);
+
+            // For backwards compatibility, request a busname without chassis id
+            bus.request_name(ChassisState::interface);
+            bus.request_name(chassisBusName.c_str());
+
+            while (true)
+            {
+                bus.process_discard();
+                bus.wait();
+            }
+        }
+        else
+        {
+            // Normal chassis state manager for non-zero chassis when SMP is
+            // enabled
+            phosphor::state::manager::Chassis manager(bus, objPathInst,
+                                                      chassisId);
+
+            bus.request_name(chassisBusName.c_str());
+            manager.startPOHCounter();
+        }
+    }
+    else
+    {
+        // Normal chassis state manager when SMP is disabled
+        phosphor::state::manager::Chassis manager(bus, objPathInst, chassisId);
+
+        // For backwards compatibility, request a busname without chassis id if
+        // input id is 0.
+        if (chassisId == 0)
+        {
+            bus.request_name(ChassisState::interface);
+        }
+
+        bus.request_name(chassisBusName.c_str());
+        manager.startPOHCounter();
     }
 
-    bus.request_name(chassisBusName.c_str());
-    manager.startPOHCounter();
     return 0;
 }

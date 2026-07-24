@@ -8,11 +8,7 @@
 #include <xyz/openbmc_project/State/Boot/Progress/client.hpp>
 #include <xyz/openbmc_project/State/Host/server.hpp>
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 using HypervisorInherit = sdbusplus::server::object_t<
@@ -21,7 +17,7 @@ using BootProgress =
     sdbusplus::client::xyz::openbmc_project::state::boot::Progress<>;
 
 namespace server = sdbusplus::server::xyz::openbmc_project::state;
-namespace sdbusRule = sdbusplus::bus::match::rules;
+namespace sdbusRule = sdbusplus::match_rules;
 
 /** @class Host
  *  @brief OpenBMC host state management implementation.
@@ -83,9 +79,7 @@ class Hypervisor : public HypervisorInherit
     void bootProgressChangeEvent(sdbusplus::message_t& msg);
 
     /** @brief Watch BootProgress changes to know hypervisor state **/
-    sdbusplus::bus::match_t bootProgressChangeSignal;
+    sdbusplus::match bootProgressChangeSignal;
 };
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

@@ -15,17 +15,13 @@
 #include <chrono>
 #include <filesystem>
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 using ChassisInherit = sdbusplus::server::object_t<
     sdbusplus::server::xyz::openbmc_project::state::Chassis,
     sdbusplus::server::xyz::openbmc_project::state::PowerOnHours>;
-namespace sdbusRule = sdbusplus::bus::match::rules;
+namespace sdbusRule = sdbusplus::match_rules;
 namespace fs = std::filesystem;
 
 /** @class Chassis
@@ -46,7 +42,8 @@ class Chassis : public ChassisInherit
      * @param[in] objPath   - The Dbus object path
      * @param[in] id        - Chassis id
      */
-    Chassis(sdbusplus::bus_t& bus, const char* objPath, size_t id) :
+    Chassis(sdbusplus::bus_t& bus, const sdbusplus::object_path& objPath,
+            size_t id) :
         ChassisInherit(bus, objPath, ChassisInherit::action::defer_emit),
         bus(bus),
         systemdSignals(
@@ -165,13 +162,13 @@ class Chassis : public ChassisInherit
     sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus systemd signals **/
-    sdbusplus::bus::match_t systemdSignals;
+    sdbusplus::match systemdSignals;
 
     /** @brief Watch for any changes to UPS properties **/
-    std::unique_ptr<sdbusplus::bus::match_t> uPowerPropChangeSignal;
+    std::unique_ptr<sdbusplus::match> uPowerPropChangeSignal;
 
     /** @brief Watch for any changes to PowerSystemInputs properties **/
-    std::unique_ptr<sdbusplus::bus::match_t> powerSysInputsPropChangeSignal;
+    std::unique_ptr<sdbusplus::match> powerSysInputsPropChangeSignal;
 
     /** @brief Chassis id. **/
     const size_t id = 0;
@@ -242,7 +239,7 @@ class Chassis : public ChassisInherit
      *
      *  @return true if fault detected, else false
      */
-    static bool standbyVoltageRegulatorFault();
+    bool standbyVoltageRegulatorFault();
 
     /** @brief Process UPS property changes
      *
@@ -265,6 +262,4 @@ class Chassis : public ChassisInherit
     void powerSysInputsChangeEvent(sdbusplus::message_t& msg);
 };
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

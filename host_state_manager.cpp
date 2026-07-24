@@ -33,11 +33,7 @@
 // Register class version with Cereal
 CEREAL_CLASS_VERSION(phosphor::state::manager::Host, CLASS_VERSION)
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 PHOSPHOR_LOG2_USING;
@@ -102,6 +98,10 @@ void Host::setupSupportedTransitions()
         Transition::ForceWarmReboot,
 #endif
     };
+    if constexpr (ENABLE_FORCE_WARM_REBOOT)
+    {
+        supportedTransitions.insert(Transition::ForceWarmReboot);
+    }
     server::Host::allowedHostTransitions(supportedTransitions);
 }
 
@@ -118,19 +118,31 @@ void Host::createSystemdTargetMaps()
         {Transition::Off, std::format("obmc-host-shutdown@{}.target", id)},
         {Transition::On, std::format("obmc-host-start@{}.target", id)},
         {Transition::Reboot, std::format("obmc-host-reboot@{}.target", id)},
-// Some systems do not support a warm reboot so just map the reboot
-// requests to our normal cold reboot in that case
-#if ENABLE_WARM_REBOOT
-        {Transition::GracefulWarmReboot,
-         std::format("obmc-host-warm-reboot@{}.target", id)},
-        {Transition::ForceWarmReboot,
-         std::format("obmc-host-force-warm-reboot@{}.target", id)}};
-#else
-        {Transition::GracefulWarmReboot,
-         std::format("obmc-host-reboot@{}.target", id)},
-        {Transition::ForceWarmReboot,
-         std::format("obmc-host-reboot@{}.target", id)}};
-#endif
+    };
+
+    // Some systems do not support a warm reboot so just map the reboot
+    // requests to our normal cold reboot in that case
+    if constexpr (ENABLE_WARM_REBOOT)
+    {
+        transitionTargetTable.insert(
+            {Transition::GracefulWarmReboot,
+             std::format("obmc-host-warm-reboot@{}.target", id)});
+
+        transitionTargetTable.insert(
+            {{Transition::ForceWarmReboot,
+              std::format("obmc-host-force-warm-reboot@{}.target", id)}});
+    }
+    else
+    {
+        transitionTargetTable.insert(
+            {Transition::GracefulWarmReboot,
+             std::format("obmc-host-reboot@{}.target", id)});
+
+        transitionTargetTable.insert(
+            {Transition::ForceWarmReboot,
+             std::format("obmc-host-reboot@{}.target", id)});
+    }
+
     hostCrashTarget = std::format("obmc-host-crash@{}.target", id);
 }
 
@@ -155,7 +167,16 @@ void Host::executeTransition(Transition tranReq)
     method.append(sysdUnit);
     method.append("replace");
 
-    this->bus.call_noreply(method);
+    try
+    {
+        this->bus.call_noreply(method);
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        error("Failed to execute transition, unit:{UNIT}, exception:{ERROR}",
+              "UNIT", sysdUnit, "ERROR", e);
+        throw;
+    }
 
     return;
 }
@@ -300,8 +321,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message_t& msg)
     msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
 
     if ((newStateUnit == getTarget(server::Host::HostState::Off)) &&
-        (newStateResult == "done") &&
-        (!stateActive(getTarget(server::Host::HostState::Running))))
+        (newStateResult == "done") && (stateActive(newStateUnit)))
     {
         info("Received signal that host is off");
         this->currentHostState(server::Host::HostState::Off);
@@ -309,8 +329,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message_t& msg)
         this->operatingSystemState(osstatus::Status::OSStatus::Inactive);
     }
     else if ((newStateUnit == getTarget(server::Host::HostState::Running)) &&
-             (newStateResult == "done") &&
-             (stateActive(getTarget(server::Host::HostState::Running))))
+             (newStateResult == "done") && (stateActive(newStateUnit)))
     {
         info("Received signal that host is running");
         this->currentHostState(server::Host::HostState::Running);
@@ -335,8 +354,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message_t& msg)
         }
     }
     else if ((newStateUnit == getTarget(server::Host::HostState::Quiesced)) &&
-             (newStateResult == "done") &&
-             (stateActive(getTarget(server::Host::HostState::Quiesced))))
+             (newStateResult == "done") && (stateActive(newStateUnit)))
     {
         if (Host::isAutoReboot())
         {
@@ -362,7 +380,7 @@ void Host::sysStateChangeJobNew(sdbusplus::message_t& msg)
 
     if (newStateUnit == getTarget(server::Host::HostState::DiagnosticMode))
     {
-        info("Received signal that host is in diagnostice mode");
+        info("Received signal that host is in diagnostic mode");
         this->currentHostState(server::Host::HostState::DiagnosticMode);
     }
     else if ((newStateUnit == hostCrashTarget) &&
@@ -564,6 +582,4 @@ Host::RestartCause Host::restartCause(RestartCause value)
     return retVal;
 }
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

@@ -6,17 +6,14 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/exception.hpp>
 #include <sdbusplus/server.hpp>
+#include <xyz/openbmc_project/State/Host/error.hpp>
 
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <string>
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 PHOSPHOR_LOG2_USING;
@@ -33,9 +30,10 @@ server::Host::Transition Hypervisor::requestedHostTransition(Transition value)
     // Only support the transition to On
     if (value != server::Host::Transition::On)
     {
-        error("Hypervisor state only supports a transition to On");
-        // TODO raise appropriate error exception
-        return server::Host::Transition::Off;
+        error("Unsupported hypervisor transition request: {TRAN_REQUEST}",
+              "TRAN_REQUEST", value);
+        throw sdbusplus::xyz::openbmc_project::State::Host::Error::
+            BMCNotReady();
     }
 
     // This property is monitored by a separate application (for example PLDM)
@@ -105,6 +103,4 @@ void Hypervisor::bootProgressChangeEvent(sdbusplus::message_t& msg)
     }
 }
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

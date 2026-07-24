@@ -23,11 +23,7 @@
 #define TFD_TIMER_CANCEL_ON_SET (1 << 1)
 #endif
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 PHOSPHOR_LOG2_USING;
@@ -93,7 +89,7 @@ void ScheduledHostTransition::hostTransition()
 {
     auto hostName = std::string(HostState::namespace_path::host) +
                     std::to_string(id);
-    std::string hostPath =
+    sdbusplus::object_path hostPath =
         sdbusplus::object_path(HostState::namespace_path::value) / hostName;
 
     auto reqTrans = convertForMessage(HostTransition::scheduledTransition());
@@ -310,6 +306,4 @@ void ScheduledHostTransition::restoreScheduledValues()
     }
 }
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

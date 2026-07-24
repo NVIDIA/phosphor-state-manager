@@ -40,6 +40,10 @@ conf.set_quoted(
     get_option('scheduled-host-transition-persist-path'),
 )
 conf.set('BOOT_COUNT_MAX_ALLOWED', get_option('boot-count-max-allowed'))
+conf.set(
+    'HOST_RESET_RECOVERY_TIMEOUT_SEC',
+    get_option('host-reset-recovery-timeout-sec'),
+)
 conf.set('CLASS_VERSION', get_option('class-version'))
 conf.set_quoted('SYSFS_SECURE_BOOT_PATH', get_option('sysfs-secure-boot-path'))
 conf.set_quoted('SYSFS_ABR_IMAGE_PATH', get_option('sysfs-abr-image-path'))
@@ -95,6 +99,16 @@ conf.set10(
     get_option('apply-power-policy-bmc-ready').allowed(),
 )
 
+conf.set10('ENABLE_MULTI_CHASSIS_SMP', get_option('multi-chassis-smp').allowed())
+
+# Always define NUM_CHASSIS_SMP to avoid compilation errors when feature is disabled
+# The value is only used when ENABLE_MULTI_CHASSIS_SMP is true
+if (get_option('multi-chassis-smp').allowed())
+    conf.set('NUM_CHASSIS_SMP', get_option('num-chassis-smp'))
+else
+    conf.set('NUM_CHASSIS_SMP', 0)
+endif
+
 configure_file(output: 'config.h', configuration: conf)
 
 if (get_option('warm-reboot').allowed())
@@ -148,7 +162,11 @@ libgpiod = dependency(
 if cpp.has_header('CLI/CLI.hpp')
     CLI11 = declare_dependency()
 else
-    CLI11 = dependency('CLI11')
+    CLI11 = dependency(
+        'CLI11',
+        include_type: 'system',
+        default_options: ['tests=disabled'],
+    )
 endif
 
 # Get Cereal dependency.
@@ -201,6 +219,7 @@ executable(
     link_with: [settings_lib, utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -216,7 +235,18 @@ executable(
     link_with: [settings_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
+
+# Build chassis state manager with optional multi-chassis SMP support
+chassis_sources = [
+    'chassis_state_manager.cpp',
+    'chassis_state_manager_main.cpp',
+]
+
+if get_option('multi-chassis-smp').allowed()
+    chassis_sources += 'chassis_state_manager_smp.cpp'
+endif
 
 executable(
     'configurable-state-manager',
@@ -235,8 +265,7 @@ executable(
 
 executable(
     'phosphor-chassis-state-manager',
-    'chassis_state_manager.cpp',
-    'chassis_state_manager_main.cpp',
+    chassis_sources,
     dependencies: [
         cereal,
         libgpiod,
@@ -249,6 +278,7 @@ executable(
     link_with: [utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -258,6 +288,7 @@ executable(
     link_with: [utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -274,6 +305,7 @@ executable(
     link_with: [utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -283,6 +315,7 @@ executable(
     link_with: [settings_lib, utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -302,6 +335,7 @@ executable(
     link_with: [utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -312,6 +346,7 @@ executable(
     link_with: [utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -320,6 +355,7 @@ executable(
     dependencies: [phosphorlogging, sdbusplus],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 executable(
@@ -329,6 +365,7 @@ executable(
     link_with: [utils_lib],
     implicit_include_directories: true,
     install: true,
+    install_dir: get_option('libexecdir') / 'phosphor-state-manager',
 )
 
 if get_option('install-utils').allowed()
@@ -336,6 +373,23 @@ if get_option('install-utils').allowed()
         'obmcutil',
         install_mode: 'rwxr-xr-x',
         install_dir: get_option('bindir'),
+    )
+endif
+
+# Build SMP chassis wait service only when multi-chassis SMP is enabled
+if get_option('multi-chassis-smp').allowed()
+    executable(
+        'phosphor-chassis-wait-for-smp-poweron',
+        'chassis_wait_for_smp_poweron.cpp',
+        dependencies: [
+            phosphordbusinterfaces,
+            phosphorlogging,
+            sdbusplus,
+            sdeventplus,
+        ],
+        implicit_include_directories: true,
+        install: true,
+        install_dir: get_option('libexecdir') / 'phosphor-state-manager',
     )
 endif
 

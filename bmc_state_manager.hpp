@@ -11,16 +11,12 @@
 #include <cassert>
 #include <chrono>
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 using BMCInherit = sdbusplus::server::object_t<
     sdbusplus::server::xyz::openbmc_project::state::BMC>;
-namespace sdbusRule = sdbusplus::bus::match::rules;
+namespace sdbusRule = sdbusplus::match_rules;
 
 /** @class BMC
  *  @brief OpenBMC BMC state management implementation.
@@ -36,7 +32,7 @@ class BMC : public BMCInherit
      * @param[in] busName   - The Dbus name to own
      * @param[in] objPath   - The Dbus object path
      */
-    BMC(sdbusplus::bus_t& bus, const char* objPath) :
+    BMC(sdbusplus::bus_t& bus, const sdbusplus::object_path& objPath) :
         BMCInherit(bus, objPath, BMCInherit::action::defer_emit), bus(bus),
         stateSignal(std::make_unique<decltype(stateSignal)::element_type>(
             bus,
@@ -132,10 +128,10 @@ class BMC : public BMCInherit
     sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus system state changes **/
-    std::unique_ptr<sdbusplus::bus::match_t> stateSignal;
+    std::unique_ptr<sdbusplus::match> stateSignal;
 
     /** @brief Used to subscribe to timesync **/
-    std::unique_ptr<sdbusplus::bus::match_t> timeSyncSignal;
+    std::unique_ptr<sdbusplus::match> timeSyncSignal;
 
     /**
      * @brief discover the last reboot cause of the bmc
@@ -156,11 +152,14 @@ class BMC : public BMCInherit
     void updateLastRebootTime();
 
     /**
+     * @brief get the boot device information
+     */
+    static std::string getBootDevice();
+
+    /**
      * @brief the lastRebootTime calculated at startup.
      **/
     uint64_t rebootTime;
 };
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager

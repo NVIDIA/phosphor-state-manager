@@ -60,7 +60,7 @@ phosphor-dbus-interfaces for each object it supports.
   `BrownOut` state indicates there is not enough chassis power to fully power on
   and `UninterruptiblePowerSupply` indicates the chassis is running on a UPS.
   - CurrentPowerState: On, Off, BrownOut, UninterruptiblePowerSupply
-  - RequestedPowerTransition: On, Off
+  - RequestedPowerTransition: On, Off, PowerCycle
   - Monitored systemd targets: obmc-chassis-poweron\@.target,
     obmc-chassis-poweroff\@.target
 - [host][4]: The host represents the software running on the system. In most
@@ -159,6 +159,219 @@ response is received then similar logic to chassis is done:
 The host@0-on file is removed once the obmc-host-start\@0.target and
 obmc-host-startmin\@0.target become active (i.e. all service have been
 successfully started which are wanted or required by these targets).
+
+## Multiple Chassis in a Symmetric Multi-Processor (SMP) System
+
+phosphor-state-manager supports an optional multi-chassis SMP feature for
+systems with multiple chassis instances that need to be managed as a single
+logical unit. This is useful in systems where multiple compute nodes or chassis
+work together in a symmetric multi-processor configuration.
+
+### Overview
+
+When the multi-chassis SMP feature is enabled, chassis instance 0 acts as an
+aggregator that monitors and controls chassis instances 1 through N. The
+aggregator does not monitor any local chassis 0 hardware; instead, it aggregates
+state information from the other chassis instances and presents a unified view.
+
+### Key Features
+
+- **Event-Driven Monitoring**: Uses D-Bus property change signals to monitor all
+  chassis instances in real-time (no polling overhead)
+- **Power State Aggregation**: Chassis 0 reports `On` only when all chassis
+  selected for power on have successfully powered on. It reports `Off` when all
+  chassis selected for power off have successfully powered off. Chassis not
+  selected for power operations (e.g., due to hardware isolation, missing
+  hardware, or bad power status) are not included in the aggregation.
+- **Power Status Aggregation**: Reports worst-case power status across all
+  chassis (BrownOut > UninterruptiblePowerSupply > Good). Note that a degraded
+  power status does not prevent power on operations; chassis with good power
+  status can still be powered on while chassis with bad power status are
+  excluded from the power on operation.
+- **Coordinated Power Control**: Power transition requests are forwarded to all
+  chassis instances, and the systemd target for chassis 0 is also triggered.
+  This allows users who have any global service to run on all power on or off's
+  to put them in the instance 0 obmc-chassis-power(off/on) targets.
+
+### Configuration
+
+The feature is enabled by default in CI but disabled by default within the
+bitbake recipe.
+
+Configuration options:
+
+- `multi-chassis-smp`: Enable/disable the feature (default: enabled)
+- `num-chassis-smp`: Maximum number of chassis instances to aggregate, 1-N
+  (default: 12)
+
+### Usage
+
+Start the chassis state manager instances:
+
+```bash
+# Chassis 0 (aggregator) - monitors chassis 1-N, no local hardware monitoring
+phosphor-chassis-state-manager --chassis 0
+
+# Chassis 1-N (normal operation) - each monitors its own local hardware
+phosphor-chassis-state-manager --chassis 1
+phosphor-chassis-state-manager --chassis 2
+...
+phosphor-chassis-state-manager --chassis N
+```
+
+### D-Bus Interface
+
+Chassis 0 presents the standard chassis D-Bus interface at:
+
+- Bus name: `xyz.openbmc_project.State.Chassis0`
+- Object path: `/xyz/openbmc_project/state/chassis0`
+
+The aggregated properties include:
+
+- `CurrentPowerState`: Aggregated power state from all chassis
+- `CurrentPowerStatus`: Worst-case power status from all chassis
+- `RequestedPowerTransition`: Forwards requests to all chassis instances
+
+### Implementation Details
+
+When a power transition is requested on chassis 0:
+
+1. The systemd target for chassis 0 is started (e.g.,
+   `obmc-chassis-poweron@0.target`)
+2. The transition request is forwarded to all chassis instances 1-N
+3. Each chassis instance processes the request independently
+4. Chassis 0 aggregates the resulting states from all instances
+
+This ensures that both the aggregator and individual chassis instances maintain
+proper systemd target states and can execute any necessary system-specific
+services.
+
+## Chassis Availability Monitoring
+
+With systems that support multiple chassis, there are potential system
+configurations where a chassis is present in the system, but not available for
+general use by BMC software. For example a chassis may not have AC power
+plugged, or a required SMP or other cable (i2c, gpio, ...) may not be properly
+plugged.
+
+In these cases there needs to be a consistent mechanism with OpenBMC firmware to
+know whether they can access the chassis. This new service within
+phosphor-state-manager will aggregate the different inputs into a single
+Available property in each chassis. This will be an optional feature within
+phosphor-state-manager that OpenBMC machine owners can enable.
+
+The set of D-Bus properties that determine chassis availability is fully
+data-driven. Rather than compiling in a fixed list of interfaces and properties,
+the service reads a JSON configuration file at startup that declares what to
+monitor and what value each property must hold to consider the chassis
+Available.
+
+### Configuration
+
+The conditions to monitor are defined in a JSON configuration file installed to
+`/usr/share/phosphor-state-manager/chassis-availability/`. A default config will
+be installed which has a single mapping to the present property. OpenBMC
+machines can override this file in the bitbake layer.
+
+The top-level `"availableObjectPath"` field specifies where the `Available`
+property is written. Like condition paths, `<N>` is substituted with the chassis
+instance number at runtime. The owning D-Bus service is resolved via
+ObjectMapper so there is no compile-time dependency on any specific inventory
+implementation.
+
+Each entry in the `"conditions"` array describes one D-Bus property to monitor.
+The `"baseObjectPath"` is the object path with `<N>` representing the chassis
+instance number (e.g. `chassis1`, `chassis2`). At startup the service
+substitutes the actual chassis number for `<N>` and calls the ObjectMapper
+`GetObject` method on the resulting path to determine which D-Bus service owns
+that object. It then registers a `PropertiesChanged` signal match on that
+service and object so the check re-runs whenever the property changes. The
+application will monitor all chassis instances it finds on dbus and will support
+chassis inventory objects showing up on dbus after it has started.
+
+#### Example: `phosphor-chassis-availability-default.json`
+
+```json
+{
+  "availableObjectPath": "/xyz/openbmc_project/inventory/system/chassis<N>",
+  "conditions": [
+    {
+      "baseObjectPath": "/xyz/openbmc_project/inventory/system/chassis<N>",
+      "interface": "xyz.openbmc_project.Inventory.Item",
+      "property": "Present",
+      "availableValue": true
+    },
+    {
+      "baseObjectPath": "/xyz/openbmc_project/inventory/system/chassis<N>",
+      "interface": "xyz.openbmc_project.State.Decorator.PowerSystemInputs",
+      "property": "Status",
+      "availableValue": "xyz.openbmc_project.State.Decorator.PowerSystemInputs.Status.Good"
+    },
+    {
+      "baseObjectPath": "/xyz/openbmc_project/inventory/system/chassis<N>",
+      "interface": "xyz.openbmc_project.Common.Progress",
+      "property": "Status",
+      "availableValue": "xyz.openbmc_project.Common.Progress.OperationStatus.Completed"
+    }
+  ]
+}
+```
+
+The `"availableValue"` field supports any JSON scalar type (boolean, string,
+integer) and is compared directly against the value returned by
+`org.freedesktop.DBus.Properties.Get`.
+
+If a configured object path does not exist on D-Bus for a given chassis (i.e.
+`GetObject` returns no results), the `Available` property will be false. As the
+OpenBMC machine owner has complete control of this configuration file for their
+machine it is assumed they expect the property be available.
+
+### Availability Logic
+
+The chassis is marked as **Available** only when ALL configured conditions are
+met (each monitored property equals its configured `"availableValue"`).
+
+If ANY monitored property transitions away from its required value, the chassis
+is immediately marked as **Unavailable**.
+
+### Output Property
+
+The `Available` property (`xyz.openbmc_project.State.Decorator.Availability`) is
+written to the object path given by `"availableObjectPath"` in the configuration
+file, via `org.freedesktop.DBus.Properties.Set`. The owning service is resolved
+at runtime through ObjectMapper, so there is no compile-time dependency on any
+specific inventory implementation.
+
+Decoupling the output path from the condition paths allows machines where the
+`Availability` interface lives on a different object than the monitored
+properties (e.g. a dedicated availability object rather than the chassis
+inventory item) to use this service without modification.
+
+Note that some additional processing will be required if the property is hosted
+by phosphor-inventory-manager as the standard `Set` call is not persistent.
+
+### Implementation
+
+The availability monitor:
+
+- Reads the JSON configuration file(s) at startup to determine which conditions
+  to evaluate
+- For each chassis instance and each condition, calls ObjectMapper `GetObject`
+  on the configured object path to discover which D-Bus service owns it
+- Subscribes to `InterfacesAdded` on `/xyz/openbmc_project/inventory` to handle
+  objects that appear after startup
+- Uses event-driven `PropertiesChanged` signals on discovered objects (no
+  polling)
+- Monitors all chassis instances 1-N simultaneously
+- Updates the `Available` property via `org.freedesktop.DBus.Properties.Set` on
+  whichever service owns the `"availableObjectPath"` object for that chassis
+- Handles errors gracefully with appropriate logging
+- Starts automatically via systemd after the D-Bus mapper is ready
+
+### D-Bus Service
+
+- Service name: `xyz.openbmc_project.State.ChassisAvailability`
+- Systemd unit: `xyz.openbmc_project.State.ChassisAvailability.service`
 
 ## Building the Code
 

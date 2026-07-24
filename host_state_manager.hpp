@@ -17,11 +17,7 @@
 #include <filesystem>
 #include <string>
 
-namespace phosphor
-{
-namespace state
-{
-namespace manager
+namespace phosphor::state::manager
 {
 
 using HostInherit = sdbusplus::server::object_t<
@@ -32,7 +28,7 @@ using HostInherit = sdbusplus::server::object_t<
 
 PHOSPHOR_LOG2_USING;
 
-namespace sdbusRule = sdbusplus::bus::match::rules;
+namespace sdbusRule = sdbusplus::match_rules;
 namespace fs = std::filesystem;
 
 /** @class Host
@@ -53,7 +49,8 @@ class Host : public HostInherit
      * @param[in] objPath   - The Dbus object path
      * @param[in] id        - The Host id
      */
-    Host(sdbusplus::bus_t& bus, const char* objPath, size_t id) :
+    Host(sdbusplus::bus_t& bus, const sdbusplus::object_path& objPath,
+         size_t id) :
         HostInherit(bus, objPath, HostInherit::action::defer_emit), bus(bus),
         systemdSignalJobRemoved(
             bus,
@@ -381,10 +378,10 @@ class Host : public HostInherit
     sdbusplus::bus_t& bus;
 
     /** @brief Used to subscribe to dbus systemd JobRemoved signal **/
-    sdbusplus::bus::match_t systemdSignalJobRemoved;
+    sdbusplus::match systemdSignalJobRemoved;
 
     /** @brief Used to subscribe to dbus systemd JobNew signal **/
-    sdbusplus::bus::match_t systemdSignalJobNew;
+    sdbusplus::match systemdSignalJobNew;
 
     // Settings host objects of interest
     settings::HostObjects settings;
@@ -405,6 +402,4 @@ class Host : public HostInherit
     std::string objPath;
 };
 
-} // namespace manager
-} // namespace state
-} // namespace phosphor
+} // namespace phosphor::state::manager
