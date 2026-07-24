@@ -31,6 +31,8 @@
 #include <sdbusplus/server/manager.hpp>
 
 #include <chrono>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -522,6 +524,7 @@ Condition ConfigurableStateManager::parseCondition(const Json& conditionJson)
  * @brief Service Entry Point
  */
 int main()
+try
 {
     log<level::INFO>("Creating Configurable State Manager connection");
     auto io = std::make_shared<boost::asio::io_context>();
@@ -676,4 +679,36 @@ int main()
     // Start the Asio I/O service
     io->run();
     return 0;
+}
+catch (const std::exception& e)
+{
+    try
+    {
+        log<level::ERR>(
+            ((boost::format("configurable-state-manager terminated by "
+                            "exception: %s") %
+              e.what())
+                 .str())
+                .c_str());
+    }
+    catch (...)
+    {
+        // swallow any secondary throw from log<>/boost::format so main()
+        // does not itself leak an exception
+    }
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    try
+    {
+        log<level::ERR>(
+            "configurable-state-manager terminated by unknown exception");
+    }
+    catch (...)
+    {
+        // swallow any secondary throw from log<> so main() does not itself
+        // leak an exception
+    }
+    return EXIT_FAILURE;
 }

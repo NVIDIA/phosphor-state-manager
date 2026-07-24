@@ -6,6 +6,8 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 
+#include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <vector>
 
@@ -41,6 +43,7 @@ void print_usage(void)
 }
 
 int main(int argc, char* argv[])
+try
 {
     auto bus = sdbusplus::bus::new_default();
     std::vector<std::string> targetFilePaths;
@@ -90,4 +93,15 @@ int main(int argc, char* argv[])
 
     bus.process_loop();
     return 0;
+}
+catch (const std::exception& e)
+{
+    error("systemd-target-monitor terminated by exception: {ERR}", "ERR",
+          e.what());
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    error("systemd-target-monitor terminated by unknown exception");
+    return EXIT_FAILURE;
 }

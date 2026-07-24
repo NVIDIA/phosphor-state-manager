@@ -2,12 +2,15 @@
 
 #include "host_condition.hpp"
 
+#include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
 
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 
 int main(int argc, char** argv)
+try
 {
     std::string hostId;
 
@@ -40,4 +43,15 @@ int main(int argc, char** argv)
     }
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    lg2::error("host-condition terminated by exception: {ERR}", "ERR",
+               e.what());
+    return EXIT_FAILURE;
+}
+catch (...)
+{
+    lg2::error("host-condition terminated by unknown exception");
+    return EXIT_FAILURE;
 }
