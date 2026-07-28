@@ -508,6 +508,54 @@ Host::Transition Host::requestedHostTransition(Transition value)
 
     executeTransition(value);
 
+    bool isWarmReboot = (value == Transition::GracefulWarmReboot);
+#if ENABLE_FORCE_WARM_REBOOT
+    isWarmReboot = isWarmReboot || (value == Transition::ForceWarmReboot);
+#endif
+
+    if (isWarmReboot || value == Transition::Reboot ||
+        (value == Transition::On &&
+         server::Host::restartCause() == RestartCause::Unknown))
+    {
+        server::Host::restartCause(RestartCause::RemoteCommand);
+        serialize();
+    }
+
+    if (isWarmReboot)
+    {
+        using namespace std::chrono;
+        auto now = static_cast<uint64_t>(
+            duration_cast<milliseconds>(system_clock::now().time_since_epoch())
+                .count());
+        auto chassisSvc = std::string("xyz.openbmc_project.State.Chassis") +
+                          std::to_string(id);
+        auto chassisPath = std::string("/xyz/openbmc_project/state/chassis") +
+                           std::to_string(id);
+        try
+        {
+            auto method = this->bus.new_method_call(
+                chassisSvc.c_str(), chassisPath.c_str(),
+                "org.freedesktop.DBus.Properties", "Set");
+            method.append("xyz.openbmc_project.State.Chassis",
+                          "LastStateChangeTime", std::variant<uint64_t>(now));
+            auto onReply = [](sdbusplus::message_t&& reply) {
+                if (reply.is_method_error())
+                {
+                    const auto* e = reply.get_error();
+                    error(
+                        "Failed to update chassis LastStateChangeTime: {ERROR}",
+                        "ERROR", e != nullptr ? e->message : "unknown");
+                }
+            };
+            lastStateChangeTimeSlot = method.call_async(std::move(onReply));
+        }
+        catch (const sdbusplus::exception_t& e)
+        {
+            error("Failed to update chassis LastStateChangeTime: {ERROR}",
+                  "ERROR", e);
+        }
+    }
+
     auto retVal = server::Host::requestedHostTransition(value);
 
     serialize();
@@ -531,7 +579,16 @@ Host::OSStatus Host::operatingSystemState(OSStatus value)
 Host::HostState Host::currentHostState(HostState value)
 {
     info("Change to Host State: {STATE}", "STATE", value);
-    return server::Host::currentHostState(value);
+
+    auto retVal = server::Host::currentHostState(value);
+
+    if (value == HostState::Running)
+    {
+        server::Host::restartCause(RestartCause::Unknown);
+        serialize();
+    }
+
+    return retVal;
 }
 
 uint64_t Host::bootProgressLastUpdate(uint64_t value)
