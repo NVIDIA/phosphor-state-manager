@@ -30,3 +30,20 @@ fs = import('fs')
 foreach u : unit_files
     fs.copyfile(u, install: true, install_dir: systemd_system_unit_dir)
 endforeach
+
+if get_option('vhmc-state-manager').allowed()
+    configure_file(
+        input: 'phosphor-vhmc-state-manager@.service.in',
+        output: 'phosphor-vhmc-state-manager@.service',
+        install_dir: systemd_system_unit_dir,
+        install: true,
+        configuration: configuration_data(
+            {
+                'VHMC_BUSNAME': get_option('vhmc-busname').replace(
+                    '{}',
+                    '%i',
+                ),
+            },
+        ),
+    )
+endif
