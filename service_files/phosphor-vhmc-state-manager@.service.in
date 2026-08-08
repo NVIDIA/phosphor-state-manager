@@ -1,0 +1,11 @@
+[Unit]
+Description=Phosphor vHMC State Manager %i
+
+[Service]
+ExecStart=/usr/bin/phosphor-vhmc-state-manager %i
+Restart=always
+Type=dbus
+BusName=@VHMC_BUSNAME@
+
+[Install]
+WantedBy=multi-user.target

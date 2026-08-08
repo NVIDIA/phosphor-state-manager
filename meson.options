@@ -286,3 +286,52 @@ option(
     value: 'disabled',
     description: 'Default RestartCause to Unsupported instead of Unknown.',
 )
+
+option(
+    'vhmc-default-instance',
+    type: 'string',
+    value: '0',
+    description: 'Instance used when the daemon is started from a plain, non-templated unit. Substituted for "{}" in the names below.',
+)
+
+option(
+    'vhmc-busname',
+    type: 'string',
+    value: 'xyz.openbmc_project.State.vHMC_{}',
+    description: 'D-Bus name owned by the vHMC state manager. Named for the container it manages; bmcweb resolves it through the mapper, so it is independent of the Redfish ManagerId.',
+)
+
+option(
+    'vhmc-objpath',
+    type: 'string',
+    value: '/xyz/openbmc_project/state/vHMC_{}',
+    description: 'Object path of the vHMC state manager. Must match the StateObjectPath property of the entity-manager SatelliteController config; it is a lookup key only, so it is named for the container rather than the Redfish ManagerId.',
+)
+
+option(
+    'vhmc-unit-name',
+    type: 'string',
+    value: 'vhmc-overlay-start.service',
+    description: 'Systemd unit that starts and stops the vHMC container.',
+)
+
+option(
+    'vhmc-trigger-unit',
+    type: 'string',
+    value: 'vhmc-overlay-start.path',
+    description: 'Systemd path unit that starts the vHMC container when its image appears.',
+)
+
+option(
+    'vhmc-reset-flag',
+    type: 'string',
+    value: '/run/vhmc-reset-tier',
+    description: 'File the reset tier is armed in, consumed by the container start hook. Must match VHMC_RESET_FLAG in the vhmc-host config. On tmpfs on purpose: an armed reset must not outlive a reboot and fire on an unrelated later start.',
+)
+
+option(
+    'vhmc-state-manager',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Build phosphor-vhmc-state-manager, the vHMC container lifecycle and reset entry point.',
+)

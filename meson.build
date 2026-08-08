@@ -22,6 +22,12 @@ conf.set_quoted(
     'CUSTOM_OBJPATH',
     get_option('configurable-state-manager-objpath'),
 )
+conf.set_quoted('VHMC_DEFAULT_INSTANCE', get_option('vhmc-default-instance'))
+conf.set_quoted('VHMC_BUSNAME', get_option('vhmc-busname'))
+conf.set_quoted('VHMC_OBJPATH', get_option('vhmc-objpath'))
+conf.set_quoted('VHMC_UNIT_NAME', get_option('vhmc-unit-name'))
+conf.set_quoted('VHMC_TRIGGER_UNIT', get_option('vhmc-trigger-unit'))
+conf.set_quoted('VHMC_RESET_FLAG', get_option('vhmc-reset-flag'))
 conf.set_quoted(
     'CUSTOM_FILEPATH',
     get_option('configurable-state-manager-filepath'),
@@ -443,4 +449,8 @@ if build_tests.allowed()
     endif
 
     subdir('test')
+endif
+
+if get_option('vhmc-state-manager').allowed()
+    subdir('vhmc')
 endif
