@@ -9,6 +9,7 @@
 #include <cereal/cereal.hpp>
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus.hpp>
+#include <sdbusplus/slot.hpp>
 #include <xyz/openbmc_project/Control/Boot/RebootAttempts/server.hpp>
 #include <xyz/openbmc_project/State/Boot/Progress/server.hpp>
 #include <xyz/openbmc_project/State/Host/server.hpp>
@@ -382,6 +383,9 @@ class Host : public HostInherit
 
     /** @brief Used to subscribe to dbus systemd JobNew signal **/
     sdbusplus::match systemdSignalJobNew;
+
+    /** @brief Keeps the async chassis LastStateChangeTime call alive. **/
+    sdbusplus::slot_t lastStateChangeTimeSlot;
 
     // Settings host objects of interest
     settings::HostObjects settings;
