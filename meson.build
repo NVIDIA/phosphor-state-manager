@@ -95,6 +95,11 @@ conf.set10(
     get_option('apply-power-policy-bmc-ready').allowed(),
 )
 
+conf.set10(
+    'RESTART_CAUSE_UNSUPPORTED_DEFAULT',
+    get_option('restart-cause-unsupported-default').allowed(),
+)
+
 configure_file(output: 'config.h', configuration: conf)
 
 if (get_option('warm-reboot').allowed())

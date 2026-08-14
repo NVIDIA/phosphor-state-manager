@@ -257,3 +257,10 @@ option(
     value: 'enabled',
     description: 'Link phosphor-bmc-quiesce-reboot.service into obmc-bmc-service-quiesce@0.target.wants to automatically reboot when BMC enters Quiesced',
 )
+
+option(
+    'restart-cause-unsupported-default',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Default RestartCause to Unsupported instead of Unknown.',
+)
