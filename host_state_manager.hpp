@@ -79,6 +79,14 @@ class Host : public HostInherit
         // Will throw exception on fail
         determineInitialState();
 
+#if RESTART_CAUSE_UNSUPPORTED_DEFAULT
+        // Enabled for managers where RestartCause is unsupported.
+        lg2::info("Setting RestartCause=Unsupported by default");
+        sdbusplus::xyz::openbmc_project::State::server::Host::restartCause(
+            RestartCause::Unsupported, true);
+        serialize();
+#endif
+
         // Setup supported transitions against this host object
         setupSupportedTransitions();
 
@@ -284,6 +292,16 @@ class Host : public HostInherit
     {
         // version is not used currently
         (void)(version);
+        // Never persist RestartCause=Unsupported. Older images that predate
+        // this enum member would throw InvalidEnumString on deserialize and
+        // crash the daemon on downgrade. Coerce to Unknown on disk while
+        // leaving the live D-Bus property unchanged.
+        auto persistedRestartCause = sdbusplus::xyz::openbmc_project::State::
+            server::Host::restartCause();
+        if (persistedRestartCause == RestartCause::Unsupported)
+        {
+            persistedRestartCause = RestartCause::Unknown;
+        }
         archive(sdbusplus::server::xyz::openbmc_project::control::boot::
                     RebootAttempts::retryAttempts(),
                 convertForMessage(sdbusplus::xyz::openbmc_project::State::
@@ -295,8 +313,7 @@ class Host : public HostInherit
                         server::Status::operatingSystemState()),
                 sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
                     bootProgressLastUpdate(),
-                convertForMessage(sdbusplus::xyz::openbmc_project::State::
-                                      server::Host::restartCause()));
+                convertForMessage(persistedRestartCause));
     }
 
     /** @brief Function required by Cereal to perform deserialization.
@@ -343,6 +360,9 @@ class Host : public HostInherit
             retryAttempts(retryAttempts, true);
         sdbusplus::xyz::openbmc_project::State::Boot::server::Progress::
             bootProgressLastUpdate(bootProgressLastUpdate, true);
+        lg2::info(
+            "load(): restoring persisted RestartCause={CAUSE} (skipSignal=true)",
+            "CAUSE", restCause);
         sdbusplus::xyz::openbmc_project::State::server::Host::restartCause(
             restCause, true);
     }

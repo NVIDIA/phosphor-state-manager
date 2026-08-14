@@ -250,3 +250,10 @@ option(
     value: true,
     description: 'run APR when BMC has been rebooted due to software request',
 )
+
+option(
+    'restart-cause-unsupported-default',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Default RestartCause to Unsupported instead of Unknown.',
+)
