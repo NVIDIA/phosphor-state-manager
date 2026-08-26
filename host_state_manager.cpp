@@ -432,8 +432,12 @@ bool Host::deserialize()
         }
         return false;
     }
-    catch (const cereal::Exception& e)
+    catch (const std::exception& e)
     {
+        // Broadened from cereal::Exception so that sdbusplus enum decode
+        // errors (e.g. InvalidEnumString for an enum member introduced by
+        // a newer image) are also caught. The persist file is discarded
+        // and the daemon boots from defaults instead of aborting.
         error("deserialize exception: {ERROR}", "ERROR", e);
         fs::remove(path);
         return false;
@@ -540,9 +544,10 @@ Host::Transition Host::requestedHostTransition(Transition value)
     isWarmReboot = isWarmReboot || (value == Transition::ForceWarmReboot);
 #endif
 
-    if (isWarmReboot || value == Transition::Reboot ||
-        (value == Transition::On &&
-         server::Host::restartCause() == RestartCause::Unknown))
+    auto currentCause = server::Host::restartCause();
+    if (currentCause != RestartCause::Unsupported &&
+        (isWarmReboot || value == Transition::Reboot ||
+         (value == Transition::On && currentCause == RestartCause::Unknown)))
     {
         server::Host::restartCause(RestartCause::RemoteCommand);
         serialize();
@@ -623,7 +628,8 @@ Host::HostState Host::currentHostState(HostState value)
 
     auto retVal = server::Host::currentHostState(value);
 
-    if (value == HostState::Running)
+    if (value == HostState::Running &&
+        server::Host::restartCause() != RestartCause::Unsupported)
     {
         server::Host::restartCause(RestartCause::Unknown);
         serialize();

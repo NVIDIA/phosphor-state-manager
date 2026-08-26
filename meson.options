@@ -278,4 +278,9 @@ option(
     type: 'integer',
     value: 12,
     description: 'Maximum number of chassis instances to aggregate in multi-chassis SMP mode (1-N)',
+option(
+    'restart-cause-unsupported-default',
+    type: 'feature',
+    value: 'disabled',
+    description: 'Default RestartCause to Unsupported instead of Unknown.',
 )

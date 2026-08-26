@@ -108,6 +108,10 @@ if (get_option('multi-chassis-smp').allowed())
 else
     conf.set('NUM_CHASSIS_SMP', 0)
 endif
+conf.set10(
+    'RESTART_CAUSE_UNSUPPORTED_DEFAULT',
+    get_option('restart-cause-unsupported-default').allowed(),
+)
 
 configure_file(output: 'config.h', configuration: conf)
 
